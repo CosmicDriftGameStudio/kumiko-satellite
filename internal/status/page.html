@@ -1,0 +1,50 @@
+{{template "head" .Refresh}}
+<body data-page="status" data-refresh="{{.Refresh}}">
+<main>
+  <h1>Kumiko Satellite</h1>
+  {{if .Subtitle}}<p class="sub">{{.Subtitle}}</p>{{end}}
+
+  <section class="card">
+    <div data-live="status">
+    <span class="pill {{.StateClass}}"><span aria-hidden="true">●</span> {{.StateLabel}}</span>
+    {{if .ShowProgress}}
+    <progress class="{{.StateClass}}" value="{{.Done}}" max="{{.Total}}"></progress>
+    <div>{{.Done}} of {{.Total}} files delivered</div>
+    {{end}}
+    {{if .Hint}}<p class="hint">{{.Hint}}{{if .PairCommand}}<code>{{.PairCommand}}</code>{{end}}</p>{{end}}
+    {{if .ShowRepair}}<form method="post" action="/setup/repair">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <button type="submit">Pair again</button>
+    </form>{{end}}
+    <dl>
+      {{if .ShowCounters}}
+      {{if .Current}}<dt>Current file</dt><dd>{{.Current}}</dd>{{end}}
+      {{if .Queued}}<dt>Waiting</dt><dd>{{.Queued}}</dd>{{end}}
+      {{if .Checking}}<dt>Being checked</dt><dd>{{.Checking}}</dd>{{end}}
+      {{end}}
+      <dt>Last sync</dt><dd>{{.LastSync}}</dd>
+      {{if .ShowCounters}}<dt>Failed</dt><dd>{{.Failed}}</dd>{{end}}
+      {{if .LastError}}<dt>Last error</dt><dd class="errtext">{{.LastError}}</dd>{{end}}
+    </dl>
+    {{if .ShowRetry}}<form method="post" action="/retry">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <button type="submit">Retry</button>
+    </form>{{end}}
+    </div>
+    <div class="foot">
+      <details>
+        <summary>Log</summary>
+        <div data-live="log">{{if .Events}}
+        <ul>
+          {{range .Events}}<li{{if .Error}} class="bad"{{end}}><time>{{.Time}}</time><span>{{.Message}}</span></li>{{end}}
+        </ul>
+        {{else}}<p class="sub">No events yet.</p>{{end}}</div>
+      </details>
+      {{if .ShowSettings}}<a href="/settings">Settings</a>{{end}}
+    </div>
+  </section>
+  <footer class="ver">Version {{.Version}}<noscript> &middot; <a href="/">Refresh</a></noscript></footer>
+</main>
+{{template "live" .Nonce}}
+</body>
+</html>
