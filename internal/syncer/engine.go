@@ -25,8 +25,8 @@ const (
 
 const (
 	maxEvents      = 200
-	messageRevoked = "Gerät gesperrt, neu koppeln"
-	messageQuota   = "Speicherplatz in der App erschöpft"
+	messageRevoked = "Device revoked, pair again"
+	messageQuota   = "Storage in the app is full"
 )
 
 var backoffs = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute}
@@ -100,10 +100,10 @@ func New(root, statePath string, up Uploader) *Engine {
 	if raw, err := os.ReadFile(statePath); err == nil {
 		if json.Unmarshal(raw, &e.state) != nil {
 			e.state = map[string]entry{}
-			e.logLocked("Statusdatei unlesbar, alle Dateien werden neu geprüft", true)
+			e.logLocked("State file unreadable, all files will be checked again", true)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		e.logLocked("Statusdatei nicht lesbar: "+err.Error(), true)
+		e.logLocked("State file not readable: "+err.Error(), true)
 	}
 	return e
 }
@@ -164,7 +164,7 @@ func (e *Engine) Retry() {
 		e.enqueueLocked(rel)
 		n++
 	}
-	e.logLocked("Erneut versuchen: "+strconv.Itoa(n)+" Datei(en) zurück in der Warteschlange", false)
+	e.logLocked("Retry: "+strconv.Itoa(n)+" file(s) back in the queue", false)
 	e.mu.Unlock()
 	select {
 	case e.wake <- struct{}{}:
@@ -202,7 +202,7 @@ func (e *Engine) Run(ctx context.Context, scanEvery time.Duration) {
 	for {
 		if err := e.Scan(); err != nil {
 			e.mu.Lock()
-			e.logLocked("Ordner konnte nicht gelesen werden: "+err.Error(), true)
+			e.logLocked("Folder could not be read: "+err.Error(), true)
 			e.mu.Unlock()
 		}
 		e.Process(ctx)

@@ -6,12 +6,12 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
 
 ## Security model
 
-- Outgoing HTTPS only. The program opens no port except a status page bound to `127.0.0.1`.
+- Outgoing HTTPS only. The program opens no port except the local page bound to `127.0.0.1`.
   Plain `http://` app URLs are refused unless the host is `localhost` or a loopback address.
 - The device token (`ksat_...`) is stored only on this machine, in
   `os.UserConfigDir()/kumiko-satellite/config.json` with mode `0600`. The app keeps only its hash.
   An admin of the tenant can revoke the connector at any time; the satellite then shows
-  "Gerät gesperrt, neu koppeln" and stops uploading.
+  "Device revoked, pair again" and stops uploading.
 - Only the Go standard library, no third-party modules, so the code can be audited in an
   afternoon. Everything lives in `internal/` with one small package per topic.
 - Folder guard: a drive or share root (`C:\`, `D:\`, `\\server\share`, `/`), Windows system folders
@@ -20,49 +20,64 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
   dedicated folder. Symlinks are resolved for this check and never followed while scanning.
 - Hidden and system files, recycle bin, `Thumbs.db`, `desktop.ini`, `.DS_Store`, `pagefile.sys`,
   `hiberfil.sys`, `swapfile.sys` and `~$` lock files are skipped, the same list the server enforces.
-- The status page checks the `Host` header (against DNS rebinding) and protects the retry button
-  with a random token plus an `Origin` check.
+- The local page checks the `Host` header (against DNS rebinding) and protects every button
+  with a random token plus an `Origin` check. Folder dialog and `schtasks` run with fixed
+  arguments only; the `ksat_` token is never shown on the page.
 
-## Install
+## Install and set up
 
-Download the binary for your platform from the GitHub releases, or build it:
+Download the binary for your platform from the GitHub releases and double-click it. A window
+opens (Windows and macOS; on Linux the default browser opens instead):
+
+1. **Connect:** enter the app address and press "Pair". A code appears; an admin of your company
+   confirms it in the app ("Confirm in the app" opens the pairing screen).
+2. **Choose folder:** pick the folder with "Browse…" (native folder dialog; on Linux needs
+   `zenity`, otherwise type the path) and keep "Start automatically when I sign in" ticked.
+
+Then the window shows the status. Closing the window does not stop the sync; double-click the
+program again to get the window back. "Settings" on the status page changes the folder and the
+autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder.
+
+Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), macOS a LaunchAgent in
+`~/Library/LaunchAgents`, Linux an entry in `~/.config/autostart`. The log is written next to
+`state.json` (`kumiko-satellite.log`).
+
+If WebView2 is missing or the window cannot open, the default browser opens the same page at
+`http://127.0.0.1:8765/`.
+
+### For admins: command line
+
+    kumiko-satellite pair --url https://app.example.com --folder "D:\Belege"
+    kumiko-satellite run --folder "D:\Belege" --status-addr 127.0.0.1:8765
+    kumiko-satellite version
+
+`pair` prints a verification URL and a code such as `AB12-CD34`; an admin confirms it in the app
+and the token is stored. `--folder` is optional there and can be given to `run`. The Windows exe
+is built for the GUI subsystem and attaches to the parent console, so the commands print in `cmd`
+and PowerShell (the prompt may return before the output ends).
+
+Build from source (Windows and Linux are pure Go; macOS needs cgo for the window):
 
     go build -ldflags "-X main.version=1.0.0" -o kumiko-satellite ./cmd/kumiko-satellite
 
-Check it with `kumiko-satellite version`.
-
-## Pair
-
-    kumiko-satellite pair --url https://app.example.com --folder "D:\Belege"
-
-The command prints (in German) a verification URL and a code such as `AB12-CD34`. A tenant admin opens the
-pairing screen in the app, enters the code and confirms. The satellite then stores the token.
-`--folder` is optional here and can be given to `run` instead.
-
-## Run
-
-    kumiko-satellite run --folder "D:\Belege" --status-addr 127.0.0.1:8765
+## How it runs
 
 The folder is scanned every 30 seconds. A file is uploaded once its size and modification time
-stayed equal over two scans, so half-written files wait. Uploads run one after another; failures
-retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's storage quota is
-exhausted, uploads stop until you press "Erneut versuchen" on the status page. A heartbeat with
-version and sync state goes out every 60 seconds. Progress is remembered in `state.json` next to
-the config file.
+stayed equal over two scans, so half-written files wait ("Checking new files"). Uploads run one
+after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's
+storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
+goes out every 60 seconds. Progress is remembered in `state.json` next to the config file.
 
-Open `http://127.0.0.1:8765/` for the status page: sync state, progress, the last 200 events and
-the retry button.
+## Dependencies
 
-### Windows: Task Scheduler
+Everything else is the Go standard library. Two small modules draw the window, one per platform:
 
-A Windows service follows later. Until then use the Task Scheduler:
+- `github.com/jchv/go-webview2` (Windows): hosts WebView2, which ships with Windows 10 and 11;
+  no cgo, so the Windows build stays a plain cross-build.
+- `github.com/webview/webview_go` (macOS): hosts the system WKWebView through cgo; the macOS
+  binary is built on a Mac runner.
 
-1. Create a task, trigger "At log on" (or "At startup" with a service account).
-2. Action: start `C:\Tools\kumiko-satellite.exe` with arguments `run --folder "D:\Belege"`.
-3. Under Settings, enable "If the task fails, restart every 1 minute" and disable
-   "Stop the task if it runs longer than".
-
-Run the task as the user whose profile holds the config file, the one that ran `pair`.
+Both are pinned in `go.mod`. Linux builds do not use them.
 
 ## Development
 
@@ -71,3 +86,6 @@ Run the task as the user whose profile holds the config file, the one that ran `
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The status page embeds IBM Plex Sans and IBM Plex Mono (SIL Open Font License 1.1, see
+`internal/status/fonts/OFL.txt`).

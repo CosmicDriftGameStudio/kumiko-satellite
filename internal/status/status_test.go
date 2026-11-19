@@ -60,7 +60,7 @@ func TestHostCheck(t *testing.T) {
 func TestPageContent(t *testing.T) {
 	h, _ := Handler(&fakeSource{}, "1.0", "https://app.example.com")
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
-	for _, want := range []string{"12 von 340", "a.pdf", "Erneut versuchen", "&lt;b&gt;boom&lt;/b&gt;", `http-equiv="refresh"`} {
+	for _, want := range []string{"12 of 340", "a.pdf", "Retry", "&lt;b&gt;boom&lt;/b&gt;", `http-equiv="refresh"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page misses %q", want)
 		}
@@ -118,25 +118,25 @@ func TestStatesQuotaRevokedChecking(t *testing.T) {
 		return do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 	}
 	q := get(syncer.Snapshot{State: syncer.StateQuota, LastError: "voll"})
-	for _, want := range []string{"Pausiert: Speicher in der App voll", `class="card warn"`, "Admin", "Erneut versuchen"} {
+	for _, want := range []string{"Paused: storage in the app is full", `class="pill warn"`, "admin", "Retry"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("quota page misses %q", want)
 		}
 	}
 	r := get(syncer.Snapshot{State: syncer.StateRevoked})
-	for _, want := range []string{"Gerät gesperrt", "kumiko-satellite pair --url https://app.example.com"} {
+	for _, want := range []string{"Device revoked", "kumiko-satellite pair --url https://app.example.com"} {
 		if !strings.Contains(r, want) {
 			t.Errorf("revoked page misses %q", want)
 		}
 	}
-	if strings.Contains(r, "Erneut versuchen") || strings.Contains(r, "/retry") {
+	if strings.Contains(r, "Retry") || strings.Contains(r, "/retry") {
 		t.Error("revoked page must hide the retry button")
 	}
 	c := get(syncer.Snapshot{State: syncer.StateChecking, Checking: 3})
-	if !strings.Contains(c, "Prüfe neue Dateien") || strings.Contains(c, "Alles aktuell") || !strings.Contains(c, "Wird geprüft") {
+	if !strings.Contains(c, "Checking new files") || strings.Contains(c, "Up to date") || !strings.Contains(c, "Being checked") {
 		t.Error("checking page wrong")
 	}
-	if e := get(syncer.Snapshot{State: syncer.StateError}); !strings.Contains(e, ">Fehler<") || !strings.Contains(e, "Erneut versuchen") {
+	if e := get(syncer.Snapshot{State: syncer.StateError}); !strings.Contains(e, ">Error<") || !strings.Contains(e, "Retry") {
 		t.Error("plain error stays red with retry")
 	}
 }
@@ -169,12 +169,12 @@ func TestRevokedHidesProgressAndCounters(t *testing.T) {
 	snap := syncer.Snapshot{State: syncer.StateRevoked, Queued: 1, Done: 0, Total: 1, Current: "a.pdf"}
 	h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
-	for _, bad := range []string{"<progress", "0 von 1", "Wartend", "Aktuelle Datei"} {
+	for _, bad := range []string{"<progress", "0 of 1", "Waiting", "Current file"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("revoked page must not show %q", bad)
 		}
 	}
-	if !strings.Contains(body, "kumiko-satellite pair --url") || !strings.Contains(body, "Protokoll") {
+	if !strings.Contains(body, "kumiko-satellite pair --url") || !strings.Contains(body, "Log") {
 		t.Error("revoked page keeps hint and log")
 	}
 }

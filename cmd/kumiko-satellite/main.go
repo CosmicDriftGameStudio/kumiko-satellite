@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -31,32 +32,44 @@ const (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
-	}
+	attachParentConsole()
+	setupLog()
+	done := make(chan int, 1)
+	go func() { done <- realMain() }()
+	os.Exit(serveWindows(done))
+}
+
+func realMain() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var err error
-	switch os.Args[1] {
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"gui"}
+	}
+	switch args[0] {
+	case "gui":
+		err = gui(ctx)
 	case "pair":
-		err = pair(ctx, os.Args[2:])
+		err = pair(ctx, args[1:])
 	case "run":
-		err = run(ctx, os.Args[2:])
+		err = run(ctx, args[1:])
 	case "version":
 		fmt.Println(version)
 	default:
 		usage()
-		os.Exit(2)
+		return 2
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		log.Println("error:", err)
+		return 1
 	}
+	return 0
 }
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
+  kumiko-satellite                (no arguments: setup and status in the browser)
   kumiko-satellite pair --url <app-url> [--folder <path>]
   kumiko-satellite run [--folder <path>] [--status-addr 127.0.0.1:8765]
   kumiko-satellite version`)
@@ -83,7 +96,7 @@ func pair(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Öffne %s\nGib den Code ein: %s\nWarte auf Bestätigung (gültig für %d s) ...\n",
+	fmt.Printf("Open %s\nEnter the code: %s\nWaiting for confirmation (valid %d s)...\n",
 		auth.VerificationURI, auth.UserCode, auth.ExpiresIn)
 	token, err := flow.Poll(ctx, auth)
 	if err != nil {
@@ -100,7 +113,7 @@ func pair(ctx context.Context, args []string) error {
 	if err := config.Save(path, cfg); err != nil {
 		return err
 	}
-	fmt.Println("Gekoppelt, Zugang gespeichert in", path)
+	fmt.Println("Paired. Access saved to", path)
 	return nil
 }
 
@@ -156,7 +169,7 @@ func run(ctx context.Context, args []string) error {
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	fmt.Printf("Watching %s, status page: http://%s/\n", root, ln.Addr())
+	log.Printf("Watching %s, status page: http://%s/", root, ln.Addr())
 	go engine.RunHeartbeat(ctx, client, version, heartbeatEvery)
 	engine.Run(ctx, scanEvery)
 	return nil

@@ -21,14 +21,16 @@ const (
 	minInterval  = time.Second
 )
 
-var ErrExpired = errors.New("der Kopplungscode ist abgelaufen, bitte neu starten")
+var ErrExpired = errors.New("the pairing code expired, start again")
 
 type Authorization struct {
 	DeviceCode      string `json:"device_code"`
 	UserCode        string `json:"user_code"`
 	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
+	// Optional in the answer: a link that already carries the code.
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
 }
 
 type Flow struct {
@@ -115,9 +117,9 @@ func (f *Flow) Poll(ctx context.Context, a Authorization) (string, error) {
 		case "expired_token":
 			return "", ErrExpired
 		case "access_denied":
-			return "", errors.New("die Kopplung wurde in der App abgelehnt")
+			return "", errors.New("pairing was declined in the app")
 		default:
-			return "", fmt.Errorf("Kopplung fehlgeschlagen: %s", code)
+			return "", fmt.Errorf("pairing failed: %s", code)
 		}
 	}
 }

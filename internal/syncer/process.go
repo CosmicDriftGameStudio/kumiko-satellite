@@ -134,7 +134,7 @@ func (e *Engine) record(rel string, obs entry, uploaded bool) {
 	delete(e.seen, rel)
 	delete(e.attempts, rel)
 	if uploaded {
-		e.logLocked("Hochgeladen: "+rel, false)
+		e.logLocked("Uploaded: "+rel, false)
 	}
 	e.done++
 	e.lastSync = e.now()
@@ -142,7 +142,7 @@ func (e *Engine) record(rel string, obs entry, uploaded bool) {
 		e.lastErr = ""
 	}
 	if err := e.saveStateLocked(); err != nil {
-		e.logLocked("Statusdatei nicht schreibbar: "+err.Error(), true)
+		e.logLocked("State file not writable: "+err.Error(), true)
 	}
 }
 
@@ -188,7 +188,7 @@ func (e *Engine) finish(rel string, err error) {
 		case apiErr.Quota():
 			e.blocked, e.blockedAs = messageQuota, StateQuota
 			e.queueBackLocked(rel)
-			e.logLocked(messageQuota+", Uploads angehalten bis „Erneut versuchen“", true)
+			e.logLocked(messageQuota+", uploads paused until “Retry”", true)
 			return
 		case apiErr.Rejected():
 			e.failLocked(rel, &failure{message: err.Error(), permanent: true})
@@ -213,7 +213,7 @@ func (e *Engine) failLocked(rel string, f *failure) {
 	e.failed[rel] = f
 	e.total--
 	e.lastErr = rel + ": " + f.message
-	e.logLocked("Fehler bei "+rel+": "+f.message, true)
+	e.logLocked("Error at "+rel+": "+f.message, true)
 }
 
 // Heartbeater is the part of the API client the heartbeat loop needs.
@@ -252,7 +252,7 @@ func (e *Engine) SendHeartbeat(ctx context.Context, hb Heartbeater, version stri
 		e.NoteRevoked()
 	case err != nil:
 		e.mu.Lock()
-		e.logLocked("Heartbeat fehlgeschlagen: "+err.Error(), true)
+		e.logLocked("Heartbeat failed: "+err.Error(), true)
 		e.mu.Unlock()
 	case retry:
 		e.Retry()

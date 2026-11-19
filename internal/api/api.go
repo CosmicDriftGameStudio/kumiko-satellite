@@ -43,6 +43,9 @@ func Endpoint(appURL string) (string, error) {
 	return strings.TrimRight(u.String(), "/") + mountPath, nil
 }
 
+// IsLoopbackHost reports whether host is localhost or a loopback address.
+func IsLoopbackHost(host string) bool { return isLoopback(host) }
+
 func isLoopback(host string) bool {
 	if host == "localhost" {
 		return true
