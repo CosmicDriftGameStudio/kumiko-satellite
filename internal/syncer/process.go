@@ -66,8 +66,22 @@ func (e *Engine) next() (string, bool) {
 }
 
 func (e *Engine) uploadOne(ctx context.Context, rel string) error {
-	full := filepath.Join(e.root, filepath.FromSlash(rel))
-	f, err := os.Open(full)
+	// The path may have been swapped for a link since the scan; os.Root refuses
+	// to resolve outside the folder and Lstat refuses links at the leaf.
+	root, err := os.OpenRoot(e.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	name := filepath.FromSlash(rel)
+	linkInfo, err := root.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !linkInfo.Mode().IsRegular()) {
+		return errGone
+	}
+	if err != nil {
+		return err
+	}
+	f, err := root.Open(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return errGone
 	}
@@ -79,11 +93,14 @@ func (e *Engine) uploadOne(ctx context.Context, rel string) error {
 	if err != nil {
 		return err
 	}
+	if !os.SameFile(linkInfo, before) {
+		return errChanged
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return err
 	}
-	after, err := os.Stat(full)
+	after, err := root.Stat(name)
 	if err != nil || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
 		return errChanged
 	}

@@ -119,6 +119,27 @@ func TestSymlinkIsNotFollowed(t *testing.T) {
 	}
 }
 
+func TestFileSwappedForLinkAfterScanIsNotRead(t *testing.T) {
+	h := newHarness(t)
+	h.write("a.txt", "1")
+	for range 2 {
+		if err := h.e.Scan(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	_ = os.WriteFile(outside, []byte("s"), 0o644)
+	target := filepath.Join(h.dir, "a.txt")
+	_ = os.Remove(target)
+	if err := os.Symlink(outside, target); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	h.e.Process(context.Background())
+	if h.files.Load() != 0 {
+		t.Fatal("a file replaced by a link to outside the folder must not be uploaded")
+	}
+}
+
 func TestQuotaBlocksUntilRetry(t *testing.T) {
 	h := newHarness(t)
 	h.write("a.txt", "1")
