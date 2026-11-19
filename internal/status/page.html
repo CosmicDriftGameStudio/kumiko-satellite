@@ -46,10 +46,12 @@
     {{end}}
     {{if .Hint}}<p class="hint">{{.Hint}}{{if .PairCommand}}<code>{{.PairCommand}}</code>{{end}}</p>{{end}}
     <dl>
+      {{if .ShowCounters}}
       {{if .Current}}<dt>Aktuelle Datei</dt><dd>{{.Current}}</dd>{{end}}
       <dt>Wartend</dt><dd>{{.Queued}}</dd>
       {{if .Checking}}<dt>Wird geprüft</dt><dd>{{.Checking}}</dd>{{end}}
       <dt>Fehler</dt><dd>{{.Failed}}</dd>
+      {{end}}
       <dt>Letzter Abgleich</dt><dd>{{.LastSync}}</dd>
       {{if .LastError}}<dt>Letzter Fehler</dt><dd class="errtext">{{.LastError}}</dd>{{end}}
     </dl>

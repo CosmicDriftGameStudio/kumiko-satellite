@@ -128,6 +128,7 @@ type view struct {
 	Checking                               int
 	Hint, PairCommand                      string
 	ShowRetry                              bool
+	ShowCounters                           bool
 }
 
 func (s *server) show(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +136,9 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 	v := view{
 		Token: s.token, Version: s.version, Queued: snap.Queued, Failed: snap.Failed,
 		Done: snap.Done, Total: snap.Total, Current: snap.Current, LastError: snap.LastError,
-		ShowProgress: snap.Total > 0, LastSync: "noch nie", Checking: snap.Checking, ShowRetry: true,
+		ShowProgress: snap.Total > 0, LastSync: "noch nie", Checking: snap.Checking,
+		ShowCounters: snap.State != syncer.StateRevoked,
+		ShowRetry:    snap.State == syncer.StateQuota || snap.State == syncer.StateError || snap.Failed > 0,
 	}
 	switch snap.State {
 	case syncer.StateSyncing:
@@ -149,7 +152,7 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		v.StateClass, v.StateLabel = "err", "Gerät gesperrt"
 		v.Hint = "Der Satellit muss in der App neu gekoppelt werden:"
 		v.PairCommand = "kumiko-satellite pair --url " + s.appURL
-		v.ShowRetry = false
+		v.ShowRetry, v.ShowProgress = false, false
 	case syncer.StateError:
 		v.StateClass, v.StateLabel = "err", "Fehler"
 	default:

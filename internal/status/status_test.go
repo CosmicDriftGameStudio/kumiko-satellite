@@ -140,3 +140,41 @@ func TestStatesQuotaRevokedChecking(t *testing.T) {
 		t.Error("plain error stays red with retry")
 	}
 }
+
+func TestRetryButtonOnlyWhereItHelps(t *testing.T) {
+	cases := []struct {
+		name string
+		snap syncer.Snapshot
+		want bool
+	}{
+		{"idle", syncer.Snapshot{State: syncer.StateIdle}, false},
+		{"idle with failed", syncer.Snapshot{State: syncer.StateIdle, Failed: 1}, true},
+		{"checking", syncer.Snapshot{State: syncer.StateChecking, Checking: 2}, false},
+		{"syncing", syncer.Snapshot{State: syncer.StateSyncing}, false},
+		{"error", syncer.Snapshot{State: syncer.StateError}, true},
+		{"quota", syncer.Snapshot{State: syncer.StateQuota}, true},
+		{"revoked", syncer.Snapshot{State: syncer.StateRevoked, Failed: 1}, false},
+	}
+	for _, c := range cases {
+		snap := c.snap
+		h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+		body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
+		if got := strings.Contains(body, `action="/retry"`); got != c.want {
+			t.Errorf("%s: retry button shown = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRevokedHidesProgressAndCounters(t *testing.T) {
+	snap := syncer.Snapshot{State: syncer.StateRevoked, Queued: 1, Done: 0, Total: 1, Current: "a.pdf"}
+	h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
+	for _, bad := range []string{"<progress", "0 von 1", "Wartend", "Aktuelle Datei"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("revoked page must not show %q", bad)
+		}
+	}
+	if !strings.Contains(body, "kumiko-satellite pair --url") || !strings.Contains(body, "Protokoll") {
+		t.Error("revoked page keeps hint and log")
+	}
+}
