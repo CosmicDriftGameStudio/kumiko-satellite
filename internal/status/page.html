@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="5">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kumiko Satellite</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f4f5f7; --card:#fff; --ink:#1c2430; --mute:#667085; --line:#e3e6eb; --ok:#1a7f4b; --busy:#1d5fd1; --err:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12161c; --card:#1b212b; --ink:#e8ecf2; --mute:#98a2b3; --line:#2b3340; --ok:#4cc38a; --busy:#6ea2ff; --err:#ff7b72; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:28px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0 0 20px; font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  .state { display:flex; align-items:center; gap:10px; font-size:18px; font-weight:600; }
+  .dot { width:12px; height:12px; border-radius:50%; background:var(--ok); }
+  .busy .dot { background:var(--busy); } .err .dot { background:var(--err); }
+  .busy .label { color:var(--busy); } .err .label { color:var(--err); } .ok .label { color:var(--ok); }
+  progress { width:100%; height:10px; margin:14px 0 6px; accent-color:var(--busy); }
+  dl { display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; margin:14px 0 0; }
+  dt { color:var(--mute); } dd { margin:0; word-break:break-all; }
+  .errtext { color:var(--err); }
+  button { margin-top:16px; font:inherit; font-weight:600; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--busy); color:#fff; cursor:pointer; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  ul { list-style:none; margin:0; padding:0; max-height:420px; overflow:auto; }
+  li { display:flex; gap:12px; padding:6px 0; border-top:1px solid var(--line); font-size:13px; }
+  li:first-child { border-top:0; }
+  time { color:var(--mute); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  li.bad span { color:var(--err); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kumiko Satellite</h1>
+  <p class="sub">Version {{.Version}} &middot; diese Seite aktualisiert sich alle 5 Sekunden</p>
+
+  <section class="card {{.StateClass}}">
+    <div class="state"><span class="dot"></span><span class="label">{{.StateLabel}}</span></div>
+    {{if .ShowProgress}}
+    <progress value="{{.Done}}" max="{{.Total}}"></progress>
+    <div>{{.Done}} von {{.Total}}</div>
+    {{end}}
+    <dl>
+      {{if .Current}}<dt>Aktuelle Datei</dt><dd>{{.Current}}</dd>{{end}}
+      <dt>Wartend</dt><dd>{{.Queued}}</dd>
+      <dt>Fehler</dt><dd>{{.Failed}}</dd>
+      <dt>Letzter Abgleich</dt><dd>{{.LastSync}}</dd>
+      {{if .LastError}}<dt>Letzter Fehler</dt><dd class="errtext">{{.LastError}}</dd>{{end}}
+    </dl>
+    <form method="post" action="/retry">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <button type="submit">Erneut versuchen</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Protokoll (letzte 200 Ereignisse)</h2>
+    {{if .Events}}
+    <ul>
+      {{range .Events}}<li{{if .Error}} class="bad"{{end}}><time>{{.Time}}</time><span>{{.Message}}</span></li>{{end}}
+    </ul>
+    {{else}}<p class="sub">Noch keine Ereignisse.</p>{{end}}
+  </section>
+</main>
+</body>
+</html>
