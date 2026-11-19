@@ -78,6 +78,9 @@ func (r *rig) post(t *testing.T, target string, form url.Values) *httptest.Respo
 }
 
 func TestSetupStepsAreOrderedAddressFirstThenFolder(t *testing.T) {
+	old := desktop.DialogAvailable
+	t.Cleanup(func() { desktop.DialogAvailable = old })
+	desktop.DialogAvailable = func() bool { return true } // CI runners have no folder dialog
 	r := newRig(t)
 	first := r.get(t, "/")
 	if !strings.Contains(first, "App address") || !strings.Contains(first, "Pair") || strings.Contains(first, `name="folder"`) {
