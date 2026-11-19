@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +18,7 @@ import (
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/config"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/filter"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/pairing"
+	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/status"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
 )
@@ -50,6 +50,8 @@ func realMain() int {
 	switch args[0] {
 	case "gui":
 		err = gui(ctx)
+	case "open":
+		err = openCommand()
 	case "pair":
 		err = pair(ctx, args[1:])
 	case "run":
@@ -72,6 +74,7 @@ func usage() {
   kumiko-satellite                (no arguments: setup and status in the browser)
   kumiko-satellite pair --url <app-url> [--folder <path>]
   kumiko-satellite run [--folder <path>] [--status-addr 127.0.0.1:8765]
+  kumiko-satellite open
   kumiko-satellite version`)
 }
 
@@ -157,11 +160,16 @@ func run(ctx context.Context, args []string) error {
 	}
 	engine := syncer.New(root, statePath, client)
 
-	handler, err := status.Handler(engine, version, cfg.URL)
+	sessionPath, err := session.Path()
 	if err != nil {
 		return err
 	}
-	ln, err := net.Listen("tcp", *addr)
+	ln, info, err := listenWithSession(*addr, sessionPath)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+	handler, err := status.Handler(engine, version, cfg.URL, info.Secret)
 	if err != nil {
 		return err
 	}
@@ -169,7 +177,7 @@ func run(ctx context.Context, args []string) error {
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	log.Printf("Watching %s, status page: http://%s/", root, ln.Addr())
+	log.Printf("Watching %s. Status: open Kumiko Satellite or run `kumiko-satellite open`", root)
 	go engine.RunHeartbeat(ctx, client, version, heartbeatEvery)
 	engine.Run(ctx, scanEvery)
 	return nil

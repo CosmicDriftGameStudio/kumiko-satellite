@@ -20,6 +20,11 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
   dedicated folder. Symlinks are resolved for this check and never followed while scanning.
 - Hidden and system files, recycle bin, `Thumbs.db`, `desktop.ini`, `.DS_Store`, `pagefile.sys`,
   `hiberfil.sys`, `swapfile.sys` and `~$` lock files are skipped, the same list the server enforces.
+- Only the user who started the satellite can use the local page, also on a shared server (RDP):
+  each start writes a random secret to `session` in the user's config dir (mode `0600`). The page
+  answers 401 without the random session cookie that `/login?k=<nonce>` sets. The nonce is single-use, valid 60 s, and is fetched with the secret as Bearer token (`/login-nonce`), so the secret is never in a URL, command line or cookie; a second start does the same to
+  ask the running instance to show its window. If the default port is taken (for example by
+  another user's instance) a free port is used and recorded in the same file.
 - The local page checks the `Host` header (against DNS rebinding) and protects every button
   with a random token plus an `Origin` check. Folder dialog and `schtasks` run with fixed
   arguments only; the `ksat_` token is never shown on the page.
@@ -42,8 +47,8 @@ Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), mac
 `~/Library/LaunchAgents`, Linux an entry in `~/.config/autostart`. The log is written next to
 `state.json` (`kumiko-satellite.log`).
 
-If WebView2 is missing or the window cannot open, the default browser opens the same page at
-`http://127.0.0.1:8765/`.
+If WebView2 is missing or the window cannot open, the default browser opens the same page.
+`kumiko-satellite open` opens it again from a terminal.
 
 ### For admins: command line
 

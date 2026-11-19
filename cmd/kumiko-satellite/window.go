@@ -21,12 +21,13 @@ var errNoWindow = errors.New("no window on this platform")
 func init() { runtime.LockOSThread() }
 
 var (
-	windowRequests = make(chan string, 1)
+	windowRequests = make(chan func() string, 1)
 	windowOpen     atomic.Bool
 )
 
 // requestWindow asks the main goroutine to open the window unless one is open.
-func requestWindow(url string) {
+// The URL is built when the window opens, so its login nonce is fresh.
+func requestWindow(url func() string) {
 	if windowOpen.Load() {
 		return
 	}
@@ -43,7 +44,8 @@ func serveWindows(done <-chan int) int {
 		select {
 		case code := <-done:
 			return code
-		case url := <-windowRequests:
+		case makeURL := <-windowRequests:
+			url := makeURL()
 			windowOpen.Store(true)
 			err := openWindow(url)
 			windowOpen.Store(false)

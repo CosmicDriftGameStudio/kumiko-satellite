@@ -4,14 +4,13 @@ import (
 	"context"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/config"
-	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/desktop"
+	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/setup"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/status"
 )
@@ -42,15 +41,15 @@ func setupLog() {
 
 // gui is the double-click mode: local page for setup and status, sync in this process.
 func gui(ctx context.Context) error {
-	addr := defaultStatusAddr
-	ln, err := net.Listen("tcp", addr)
+	sessionPath, err := session.Path()
 	if err != nil {
-		if status.SignalShow(addr) {
-			return nil
-		}
-		if status.IsSatellite(addr) {
-			return desktop.OpenBrowser("http://" + addr + "/")
-		}
+		return err
+	}
+	if signalRunning(sessionPath) == nil {
+		return nil // an instance of this user runs and shows its window again
+	}
+	ln, info, err := listenWithSession(defaultStatusAddr, sessionPath)
+	if err != nil {
 		return err
 	}
 	defer ln.Close()
@@ -83,10 +82,18 @@ func gui(ctx context.Context) error {
 		}
 	}
 
-	pageURL := "http://" + ln.Addr().String() + "/"
+	nonces := status.NewNonces()
+	loginURL := func() string {
+		nonce, err := nonces.New()
+		if err != nil {
+			log.Printf("login nonce: %v", err)
+		}
+		return info.LoginURL(nonce)
+	}
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: r.source, Wizard: wiz, Settings: r, AppURL: r.AppURL,
-		ShowWindow: func() { requestWindow(pageURL) },
+		ShowWindow: func() { requestWindow(loginURL) },
+		Secret:     info.Secret, Nonces: nonces,
 	})
 	if err != nil {
 		return err
@@ -95,8 +102,8 @@ func gui(ctx context.Context) error {
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	log.Printf("status page: %s", pageURL)
-	requestWindow(pageURL)
+	log.Printf("status page: http://%s/", info.Addr())
+	requestWindow(loginURL)
 	<-ctx.Done()
 	return context.Canceled
 }

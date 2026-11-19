@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/setup"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
@@ -44,6 +46,12 @@ type Options struct {
 	AppURL   func() string
 	// ShowWindow reopens the local window; a second start of the program asks for it.
 	ShowWindow func()
+	// Secret is the per-user secret from the session file. It is only a Bearer
+	// token for /login-nonce and /show-window, never in a URL or cookie; browsers
+	// log in with a single-use nonce and get a random session ID as cookie.
+	Secret string
+	// Nonces issues the single-use values of login links; NewHandler makes its own when nil.
+	Nonces *Nonces
 }
 
 //go:embed layout.html page.html setup.html settings.html
@@ -77,20 +85,70 @@ func ValidateAddr(addr string) error {
 type server struct {
 	opt   Options
 	token string
+
+	sessMu   sync.Mutex
+	sessions []string // random IDs of logged-in browsers; memory only
+}
+
+const maxSessions = 32
+
+// newSession registers a random session ID for a freshly logged-in browser.
+func (s *server) newSession() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	id := hex.EncodeToString(raw)
+	s.sessMu.Lock()
+	defer s.sessMu.Unlock()
+	s.sessions = append(s.sessions, id)
+	if len(s.sessions) > maxSessions {
+		s.sessions = s.sessions[len(s.sessions)-maxSessions:]
+	}
+	return id, nil
+}
+
+func (s *server) knownSession(id string) bool {
+	s.sessMu.Lock()
+	defer s.sessMu.Unlock()
+	for _, known := range s.sessions {
+		if secretEqual(id, known) {
+			return true
+		}
+	}
+	return false
 }
 
 // Handler builds the plain status handler (used by `run`).
-func Handler(src Source, version, appURL string) (http.Handler, error) {
-	return NewHandler(Options{Version: version, Source: func() Source { return src }, AppURL: func() string { return appURL }})
+func Handler(src Source, version, appURL, secret string) (http.Handler, error) {
+	return NewHandler(Options{Version: version, Secret: secret, Source: func() Source { return src }, AppURL: func() string { return appURL }})
 }
 
 // NewHandler builds the page handler with a fresh random form token.
 func NewHandler(opt Options) (http.Handler, error) {
+	s, err := newServer(opt)
+	if err != nil {
+		return nil, err
+	}
+	return s.handler(), nil
+}
+
+func newServer(opt Options) (*server, error) {
+	if opt.Secret == "" {
+		return nil, errors.New("status page needs a session secret")
+	}
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
 	}
-	s := &server{opt: opt, token: hex.EncodeToString(raw)}
+	if opt.Nonces == nil {
+		opt.Nonces = NewNonces()
+	}
+	return &server{opt: opt, token: hex.EncodeToString(raw)}, nil
+}
+
+func (s *server) handler() http.Handler {
+	opt := s.opt
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.show)
 	mux.Handle("GET /fonts/", http.FileServerFS(fontFS))
@@ -103,19 +161,36 @@ func NewHandler(opt Options) (http.Handler, error) {
 		mux.HandleFunc("POST /setup/repair", s.post(s.setupRepair))
 	}
 	if opt.ShowWindow != nil {
-		mux.HandleFunc("GET /instance", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(s.token)) })
-		mux.HandleFunc("POST /show-window", s.post(func(w http.ResponseWriter, _ *http.Request) {
+		mux.HandleFunc("POST /show-window", func(w http.ResponseWriter, r *http.Request) {
+			if !secretEqual(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), opt.Secret) {
+				unauthorized(w)
+				return
+			}
 			opt.ShowWindow()
 			w.WriteHeader(http.StatusNoContent)
-		}))
+		})
 	}
+	mux.HandleFunc("GET /login", s.login)
+	mux.HandleFunc("POST /login-nonce", func(w http.ResponseWriter, r *http.Request) {
+		if !secretEqual(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), opt.Secret) {
+			unauthorized(w)
+			return
+		}
+		nonce, err := opt.Nonces.New()
+		if err != nil {
+			http.Error(w, "no nonce", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"nonce": nonce})
+	})
 	if opt.Settings != nil {
 		mux.HandleFunc("GET /settings", s.settingsShow)
 		mux.HandleFunc("POST /settings/pick", s.post(s.settingsPick))
 		mux.HandleFunc("POST /settings/folder", s.post(s.settingsFolder))
 		mux.HandleFunc("POST /settings/autostart", s.post(s.settingsAutostart))
 	}
-	return s.guard(mux), nil
+	return s.guard(mux)
 }
 
 // guard rejects foreign Host headers: a DNS-rebinding page would send its own
@@ -132,8 +207,55 @@ func (s *server) guard(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set(instanceHeader, "1")
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; form-action 'self'; frame-ancestors 'none'")
+		if !s.open(r) && !s.authorized(r) {
+			unauthorized(w)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+const sessionCookie = "ksat_session"
+
+// open lists the routes that work without the cookie: the login itself, the
+// fonts, and /show-window and /login-nonce, which check their own Bearer token.
+func (s *server) open(r *http.Request) bool {
+	p := r.URL.Path
+	return p == "/login" || p == "/login-nonce" || p == "/show-window" || strings.HasPrefix(p, "/fonts/")
+}
+
+func (s *server) authorized(r *http.Request) bool {
+	c, err := r.Cookie(sessionCookie)
+	return err == nil && s.knownSession(c.Value)
+}
+
+func secretEqual(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// unauthorized answers without any state, file name or token.
+func unauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte("Open Kumiko Satellite from its icon.\n"))
+}
+
+// login trades the single-use nonce from the link for the session cookie and redirects,
+// so the secret does not stay in the address bar or the history.
+func (s *server) login(w http.ResponseWriter, r *http.Request) {
+	if !s.opt.Nonces.Consume(r.URL.Query().Get("k")) {
+		unauthorized(w)
+		return
+	}
+	id, err := s.newSession()
+	if err != nil {
+		http.Error(w, "no session", http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func localHost(hostport string) bool {

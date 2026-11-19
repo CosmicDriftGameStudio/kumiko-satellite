@@ -24,6 +24,33 @@ func (f *fakeSource) Snapshot() syncer.Snapshot {
 }
 func (f *fakeSource) Retry() { f.retries++ }
 
+const testSecret = "test-secret"
+
+// testCookie is the session ID of the handler built last; tests run one after another.
+var testCookie string
+
+// testHandler builds a handler and logs a browser in, so do() can send the cookie.
+func testHandler(src Source) (http.Handler, error) {
+	return newTestHandler(Options{
+		Version: "1.0", Secret: testSecret, Source: func() Source { return src },
+		AppURL: func() string { return "https://app.example.com" },
+	})
+}
+
+func newTestHandler(opt Options) (http.Handler, error) {
+	s, err := newServer(opt)
+	if err != nil {
+		return nil, err
+	}
+	if testCookie, err = s.newSession(); err != nil {
+		return nil, err
+	}
+	return s.handler(), nil
+}
+
+// noCookie marks a request that must reach the handler without the session cookie.
+const noCookie = "X-Test-No-Cookie"
+
 func do(t *testing.T, h http.Handler, method, host, target string, hdr map[string]string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	var body *strings.Reader
@@ -37,8 +64,13 @@ func do(t *testing.T, h http.Handler, method, host, target string, hdr map[strin
 	if form != nil {
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
+	if _, skip := hdr[noCookie]; !skip {
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: testCookie})
+	}
 	for k, v := range hdr {
-		r.Header.Set(k, v)
+		if k != noCookie {
+			r.Header.Set(k, v)
+		}
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -46,7 +78,7 @@ func do(t *testing.T, h http.Handler, method, host, target string, hdr map[strin
 }
 
 func TestHostCheck(t *testing.T) {
-	h, _ := Handler(&fakeSource{}, "1.0", "https://app.example.com")
+	h, _ := testHandler(&fakeSource{})
 	for host, want := range map[string]int{
 		"127.0.0.1:8765": 200, "localhost:8765": 200,
 		"evil.example.com": 403, "evil.example.com:8765": 403, "127.0.0.1": 403, "127.0.0.1.evil.com:80": 403,
@@ -58,7 +90,7 @@ func TestHostCheck(t *testing.T) {
 }
 
 func TestPageContent(t *testing.T) {
-	h, _ := Handler(&fakeSource{}, "1.0", "https://app.example.com")
+	h, _ := testHandler(&fakeSource{})
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 	for _, want := range []string{"12 of 340", "a.pdf", "Retry", "&lt;b&gt;boom&lt;/b&gt;", `http-equiv="refresh"`} {
 		if !strings.Contains(body, want) {
@@ -72,7 +104,7 @@ func TestPageContent(t *testing.T) {
 
 func TestRetryNeedsTokenAndOrigin(t *testing.T) {
 	src := &fakeSource{}
-	h, _ := Handler(src, "1.0", "https://app.example.com")
+	h, _ := testHandler(src)
 	host := "127.0.0.1:8765"
 	origin := map[string]string{"Origin": "http://" + host}
 
@@ -114,7 +146,7 @@ func TestValidateAddr(t *testing.T) {
 
 func TestStatesQuotaRevokedChecking(t *testing.T) {
 	get := func(snap syncer.Snapshot) string {
-		h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+		h, _ := testHandler(&fakeSource{snap: &snap})
 		return do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 	}
 	q := get(syncer.Snapshot{State: syncer.StateQuota, LastError: "voll"})
@@ -157,7 +189,7 @@ func TestRetryButtonOnlyWhereItHelps(t *testing.T) {
 	}
 	for _, c := range cases {
 		snap := c.snap
-		h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+		h, _ := testHandler(&fakeSource{snap: &snap})
 		body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 		if got := strings.Contains(body, `action="/retry"`); got != c.want {
 			t.Errorf("%s: retry button shown = %v, want %v", c.name, got, c.want)
@@ -167,7 +199,7 @@ func TestRetryButtonOnlyWhereItHelps(t *testing.T) {
 
 func TestRevokedHidesProgressAndCounters(t *testing.T) {
 	snap := syncer.Snapshot{State: syncer.StateRevoked, Queued: 1, Done: 0, Total: 1, Current: "a.pdf"}
-	h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+	h, _ := testHandler(&fakeSource{snap: &snap})
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 	for _, bad := range []string{"<progress", "0 of 1", "Waiting", "Current file"} {
 		if strings.Contains(body, bad) {
