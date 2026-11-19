@@ -181,12 +181,12 @@ func (e *Engine) finish(rel string, err error) {
 	if errors.As(err, &apiErr) {
 		switch {
 		case apiErr.Revoked():
-			e.blocked = messageRevoked
+			e.blocked, e.blockedAs = messageRevoked, StateRevoked
 			e.queueBackLocked(rel)
 			e.logLocked(messageRevoked, true)
 			return
 		case apiErr.Quota():
-			e.blocked = messageQuota
+			e.blocked, e.blockedAs = messageQuota, StateQuota
 			e.queueBackLocked(rel)
 			e.logLocked(messageQuota+", Uploads angehalten bis „Erneut versuchen“", true)
 			return
@@ -221,11 +221,26 @@ type Heartbeater interface {
 	Heartbeat(ctx context.Context, version string, sync *api.SyncInfo) (bool, error)
 }
 
+// wireState maps to the states the server accepts (idle, syncing, error);
+// an unknown state is reported as error rather than passed through.
+func wireState(s State) string {
+	switch s {
+	case StateIdle:
+		return "idle"
+	case StateSyncing, StateChecking:
+		return "syncing"
+	case StateError, StateQuota, StateRevoked:
+		return "error"
+	default:
+		return "error"
+	}
+}
+
 // SendHeartbeat reports the state once; retry:true requeues the failed files.
 func (e *Engine) SendHeartbeat(ctx context.Context, hb Heartbeater, version string) {
 	s := e.Snapshot()
 	info := &api.SyncInfo{
-		State: string(s.State), Queued: s.Queued, Failed: s.Failed, LastError: truncateRunes(s.LastError, 200),
+		State: wireState(s.State), Queued: s.Queued, Failed: s.Failed, LastError: truncateRunes(s.LastError, 200),
 	}
 	if !s.LastSyncAt.IsZero() {
 		info.LastSyncAt = s.LastSyncAt.UTC().Format(time.RFC3339)

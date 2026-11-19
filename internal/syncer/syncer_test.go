@@ -92,6 +92,9 @@ func TestFileNeedsTwoScansAndIsUploadedOnce(t *testing.T) {
 	if h.files.Load() != 0 {
 		t.Fatal("a file seen once must not be uploaded")
 	}
+	if s := h.e.Snapshot(); s.State != StateChecking || s.Checking != 1 {
+		t.Fatalf("file in stability check: %+v", s)
+	}
 	_ = h.e.Scan()
 	h.e.Process(context.Background())
 	if h.files.Load() != 1 {
@@ -147,8 +150,8 @@ func TestQuotaBlocksUntilRetry(t *testing.T) {
 	h.status.Store(507)
 	h.cycle()
 	s := h.e.Snapshot()
-	if s.State != StateError || h.files.Load() != 1 {
-		t.Fatalf("state %s, uploads %d: want error after one attempt", s.State, h.files.Load())
+	if s.State != StateQuota || h.files.Load() != 1 {
+		t.Fatalf("state %s, uploads %d: want quota after one attempt", s.State, h.files.Load())
 	}
 	h.e.Process(context.Background())
 	if h.files.Load() != 1 {
@@ -167,7 +170,7 @@ func TestRevokedTokenShowsPairAgain(t *testing.T) {
 	h.write("a.txt", "1")
 	h.status.Store(401)
 	h.cycle()
-	if s := h.e.Snapshot(); s.State != StateError || s.LastError != messageRevoked {
+	if s := h.e.Snapshot(); s.State != StateRevoked || s.LastError != messageRevoked {
 		t.Fatalf("%+v", s)
 	}
 }
@@ -223,5 +226,15 @@ func TestEventLogIsRingBuffer(t *testing.T) {
 	h.e.mu.Unlock()
 	if n := len(h.e.Snapshot().Events); n != 200 {
 		t.Fatalf("events = %d", n)
+	}
+}
+
+func TestWireStateIsAcceptedByServer(t *testing.T) {
+	for _, st := range []State{StateIdle, StateSyncing, StateError, StateChecking, StateQuota, StateRevoked} {
+		switch w := wireState(st); w {
+		case "idle", "syncing", "error":
+		default:
+			t.Errorf("state %q maps to %q, server accepts only idle|syncing|error", st, w)
+		}
 	}
 }

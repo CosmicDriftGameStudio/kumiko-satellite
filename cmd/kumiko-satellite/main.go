@@ -83,7 +83,7 @@ func pair(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Open %s\nEnter the code: %s\nWaiting for confirmation (valid %d s)...\n",
+	fmt.Printf("Öffne %s\nGib den Code ein: %s\nWarte auf Bestätigung (gültig für %d s) ...\n",
 		auth.VerificationURI, auth.UserCode, auth.ExpiresIn)
 	token, err := flow.Poll(ctx, auth)
 	if err != nil {
@@ -100,7 +100,7 @@ func pair(ctx context.Context, args []string) error {
 	if err := config.Save(path, cfg); err != nil {
 		return err
 	}
-	fmt.Println("Paired. Token saved to", path)
+	fmt.Println("Gekoppelt, Zugang gespeichert in", path)
 	return nil
 }
 
@@ -144,7 +144,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	engine := syncer.New(root, statePath, client)
 
-	handler, err := status.Handler(engine, version)
+	handler, err := status.Handler(engine, version, cfg.URL)
 	if err != nil {
 		return err
 	}

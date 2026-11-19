@@ -17,6 +17,10 @@ const (
 	StateIdle    State = "idle"
 	StateSyncing State = "syncing"
 	StateError   State = "error"
+	// StateChecking: files were seen but have not stayed unchanged over two scans yet.
+	StateChecking State = "checking"
+	StateQuota    State = "quota"
+	StateRevoked  State = "revoked"
 )
 
 const (
@@ -36,6 +40,7 @@ type Event struct {
 type Snapshot struct {
 	State      State
 	Queued     int
+	Checking   int // seen, waiting for the second matching scan
 	Failed     int
 	Done       int
 	Total      int
@@ -74,6 +79,7 @@ type Engine struct {
 	failed     map[string]*failure
 	attempts   map[string]int
 	blocked    string
+	blockedAs  State // StateQuota or StateRevoked while blocked != ""
 	current    string
 	processing bool
 	done       int
@@ -113,16 +119,18 @@ func (e *Engine) Snapshot() Snapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s := Snapshot{
-		State: StateIdle, Queued: len(e.queue), Failed: len(e.failed), Done: e.done, Total: e.total,
+		State: StateIdle, Queued: len(e.queue), Checking: e.checkingLocked(), Failed: len(e.failed), Done: e.done, Total: e.total,
 		Current: e.current, LastError: e.lastErr, LastSyncAt: e.lastSync,
 	}
 	switch {
 	case e.blocked != "":
-		s.State, s.LastError = StateError, e.blocked
+		s.State, s.LastError = e.blockedAs, e.blocked
 	case len(e.failed) > 0:
 		s.State = StateError
 	case e.processing:
 		s.State = StateSyncing
+	case len(e.queue) > 0 || s.Checking > 0:
+		s.State = StateChecking
 	}
 	s.Events = make([]Event, len(e.events))
 	for i, ev := range e.events {
@@ -131,10 +139,24 @@ func (e *Engine) Snapshot() Snapshot {
 	return s
 }
 
+// checkingLocked counts changed files that wait for their second matching scan.
+func (e *Engine) checkingLocked() int {
+	n := 0
+	for rel, obs := range e.seen {
+		if st, ok := e.state[rel]; ok && st.Size == obs.size && st.MtimeUnixNano == obs.mtime {
+			continue
+		}
+		if !e.queued[rel] && e.failed[rel] == nil && rel != e.current {
+			n++
+		}
+	}
+	return n
+}
+
 // Retry clears a block and puts every failed file back into the queue.
 func (e *Engine) Retry() {
 	e.mu.Lock()
-	e.blocked, e.lastErr = "", ""
+	e.blocked, e.blockedAs, e.lastErr = "", "", ""
 	n := 0
 	for rel := range e.failed {
 		delete(e.failed, rel)
@@ -155,7 +177,7 @@ func (e *Engine) NoteRevoked() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.blocked != messageRevoked {
-		e.blocked = messageRevoked
+		e.blocked, e.blockedAs = messageRevoked, StateRevoked
 		e.logLocked(messageRevoked, true)
 	}
 }

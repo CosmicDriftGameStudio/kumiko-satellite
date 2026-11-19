@@ -35,7 +35,7 @@ Check it with `kumiko-satellite version`.
 
     kumiko-satellite pair --url https://app.example.com --folder "D:\Belege"
 
-The command prints a verification URL and a code such as `AB12-CD34`. A tenant admin opens the
+The command prints (in German) a verification URL and a code such as `AB12-CD34`. A tenant admin opens the
 pairing screen in the app, enters the code and confirms. The satellite then stores the token.
 `--folder` is optional here and can be given to `run` instead.
 

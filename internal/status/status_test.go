@@ -10,9 +10,15 @@ import (
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
 )
 
-type fakeSource struct{ retries int }
+type fakeSource struct {
+	retries int
+	snap    *syncer.Snapshot
+}
 
 func (f *fakeSource) Snapshot() syncer.Snapshot {
+	if f.snap != nil {
+		return *f.snap
+	}
 	return syncer.Snapshot{State: syncer.StateError, Done: 12, Total: 340, Current: "a.pdf", LastError: "<b>boom</b>",
 		Events: []syncer.Event{{Message: "neu"}, {Message: "alt"}}}
 }
@@ -40,7 +46,7 @@ func do(t *testing.T, h http.Handler, method, host, target string, hdr map[strin
 }
 
 func TestHostCheck(t *testing.T) {
-	h, _ := Handler(&fakeSource{}, "1.0")
+	h, _ := Handler(&fakeSource{}, "1.0", "https://app.example.com")
 	for host, want := range map[string]int{
 		"127.0.0.1:8765": 200, "localhost:8765": 200,
 		"evil.example.com": 403, "evil.example.com:8765": 403, "127.0.0.1": 403, "127.0.0.1.evil.com:80": 403,
@@ -52,7 +58,7 @@ func TestHostCheck(t *testing.T) {
 }
 
 func TestPageContent(t *testing.T) {
-	h, _ := Handler(&fakeSource{}, "1.0")
+	h, _ := Handler(&fakeSource{}, "1.0", "https://app.example.com")
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
 	for _, want := range []string{"12 von 340", "a.pdf", "Erneut versuchen", "&lt;b&gt;boom&lt;/b&gt;", `http-equiv="refresh"`} {
 		if !strings.Contains(body, want) {
@@ -66,7 +72,7 @@ func TestPageContent(t *testing.T) {
 
 func TestRetryNeedsTokenAndOrigin(t *testing.T) {
 	src := &fakeSource{}
-	h, _ := Handler(src, "1.0")
+	h, _ := Handler(src, "1.0", "https://app.example.com")
 	host := "127.0.0.1:8765"
 	origin := map[string]string{"Origin": "http://" + host}
 
@@ -103,5 +109,34 @@ func TestValidateAddr(t *testing.T) {
 		if (ValidateAddr(addr) == nil) != ok {
 			t.Errorf("%s: want ok=%v", addr, ok)
 		}
+	}
+}
+
+func TestStatesQuotaRevokedChecking(t *testing.T) {
+	get := func(snap syncer.Snapshot) string {
+		h, _ := Handler(&fakeSource{snap: &snap}, "1.0", "https://app.example.com")
+		return do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
+	}
+	q := get(syncer.Snapshot{State: syncer.StateQuota, LastError: "voll"})
+	for _, want := range []string{"Pausiert: Speicher in der App voll", `class="card warn"`, "Admin", "Erneut versuchen"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("quota page misses %q", want)
+		}
+	}
+	r := get(syncer.Snapshot{State: syncer.StateRevoked})
+	for _, want := range []string{"Gerät gesperrt", "kumiko-satellite pair --url https://app.example.com"} {
+		if !strings.Contains(r, want) {
+			t.Errorf("revoked page misses %q", want)
+		}
+	}
+	if strings.Contains(r, "Erneut versuchen") || strings.Contains(r, "/retry") {
+		t.Error("revoked page must hide the retry button")
+	}
+	c := get(syncer.Snapshot{State: syncer.StateChecking, Checking: 3})
+	if !strings.Contains(c, "Prüfe neue Dateien") || strings.Contains(c, "Alles aktuell") || !strings.Contains(c, "Wird geprüft") {
+		t.Error("checking page wrong")
+	}
+	if e := get(syncer.Snapshot{State: syncer.StateError}); !strings.Contains(e, ">Fehler<") || !strings.Contains(e, "Erneut versuchen") {
+		t.Error("plain error stays red with retry")
 	}
 }

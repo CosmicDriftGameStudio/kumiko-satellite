@@ -43,16 +43,17 @@ func ValidateAddr(addr string) error {
 type server struct {
 	src     Source
 	version string
+	appURL  string
 	token   string
 }
 
 // Handler builds the page handler with a fresh random form token.
-func Handler(src Source, version string) (http.Handler, error) {
+func Handler(src Source, version, appURL string) (http.Handler, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
 	}
-	s := &server{src: src, version: version, token: hex.EncodeToString(raw)}
+	s := &server{src: src, version: version, appURL: appURL, token: hex.EncodeToString(raw)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.show)
 	mux.HandleFunc("POST /retry", s.retry)
@@ -124,6 +125,9 @@ type view struct {
 	Current, LastError, LastSync           string
 	Events                                 []eventView
 	ShowProgress                           bool
+	Checking                               int
+	Hint, PairCommand                      string
+	ShowRetry                              bool
 }
 
 func (s *server) show(w http.ResponseWriter, r *http.Request) {
@@ -131,11 +135,21 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 	v := view{
 		Token: s.token, Version: s.version, Queued: snap.Queued, Failed: snap.Failed,
 		Done: snap.Done, Total: snap.Total, Current: snap.Current, LastError: snap.LastError,
-		ShowProgress: snap.Total > 0, LastSync: "noch nie",
+		ShowProgress: snap.Total > 0, LastSync: "noch nie", Checking: snap.Checking, ShowRetry: true,
 	}
 	switch snap.State {
 	case syncer.StateSyncing:
 		v.StateClass, v.StateLabel = "busy", "Synchronisiert gerade"
+	case syncer.StateChecking:
+		v.StateClass, v.StateLabel = "busy", "Prüfe neue Dateien"
+	case syncer.StateQuota:
+		v.StateClass, v.StateLabel = "warn", "Pausiert: Speicher in der App voll"
+		v.Hint = "Ein Admin muss in der App Platz schaffen oder das Limit erhöhen. Danach „Erneut versuchen“."
+	case syncer.StateRevoked:
+		v.StateClass, v.StateLabel = "err", "Gerät gesperrt"
+		v.Hint = "Der Satellit muss in der App neu gekoppelt werden:"
+		v.PairCommand = "kumiko-satellite pair --url " + s.appURL
+		v.ShowRetry = false
 	case syncer.StateError:
 		v.StateClass, v.StateLabel = "err", "Fehler"
 	default:
