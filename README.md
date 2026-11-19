@@ -21,10 +21,19 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
 - Hidden and system files, recycle bin, `Thumbs.db`, `desktop.ini`, `.DS_Store`, `pagefile.sys`,
   `hiberfil.sys`, `swapfile.sys` and `~$` lock files are skipped, the same list the server enforces.
 - Only the user who started the satellite can use the local page, also on a shared server (RDP):
-  each start writes a random secret to `session` in the user's config dir (mode `0600`). The page
-  answers 401 without the random session cookie that `/login?k=<nonce>` sets. The nonce is single-use, valid 60 s, and is fetched with the secret as Bearer token (`/login-nonce`), so the secret is never in a URL, command line or cookie; a second start does the same to
-  ask the running instance to show its window. If the default port is taken (for example by
-  another user's instance) a free port is used and recorded in the same file.
+  each start writes a random secret (and its PID as a hint) to `session` in the user's config dir
+  (mode `0600`), and deletes the file on a clean exit. The secret is never sent: `open` and a
+  second start first make the server prove it knows the secret (HMAC over a random challenge), so
+  a program squatting on the recorded port gets nothing and `open` stops with "Another program is
+  using the satellite's port"; then they answer a one-time challenge the same way to ask for a
+  login nonce or for the window. The nonce is single-use, valid 60 s. A browser start opens a
+  `login-*.html` file (mode `0600`, in the config dir) that posts the nonce to `/login`, so the
+  nonce is in no command line; the file goes away with the login or after 60 s. The page answers
+  401 without the random session cookie `ksat_session_<port>` that the login sets. If the default
+  port is taken (for example by another user's instance) a free port is used and recorded in the
+  same file. What remains: browsers share cookies between ports, so if the owner's browser is
+  sent to a foreign program's port, that program can read the cookie; the satellite itself never
+  opens a port other than its own.
 - The local page checks the `Host` header (against DNS rebinding) and protects every button
   with a random token plus an `Origin` check. Folder dialog and `schtasks` run with fixed
   arguments only; the `ksat_` token is never shown on the page.

@@ -32,7 +32,7 @@ var testCookie string
 // testHandler builds a handler and logs a browser in, so do() can send the cookie.
 func testHandler(src Source) (http.Handler, error) {
 	return newTestHandler(Options{
-		Version: "1.0", Secret: testSecret, Source: func() Source { return src },
+		Version: "1.0", Secret: testSecret, Port: 8765, Source: func() Source { return src },
 		AppURL: func() string { return "https://app.example.com" },
 	})
 }
@@ -65,7 +65,7 @@ func do(t *testing.T, h http.Handler, method, host, target string, hdr map[strin
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if _, skip := hdr[noCookie]; !skip {
-		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: testCookie})
+		r.AddCookie(&http.Cookie{Name: "ksat_session_8765", Value: testCookie})
 	}
 	for k, v := range hdr {
 		if k != noCookie {

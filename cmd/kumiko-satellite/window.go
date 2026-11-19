@@ -21,18 +21,24 @@ var errNoWindow = errors.New("no window on this platform")
 func init() { runtime.LockOSThread() }
 
 var (
-	windowRequests = make(chan func() string, 1)
+	windowRequests = make(chan loginLinks, 1)
 	windowOpen     atomic.Bool
 )
 
+// loginLinks build fresh single-use logins when a window opens: the native
+// window gets its URL inside this process, a browser only a file:// URL.
+type loginLinks struct {
+	window  func() string
+	browser func() (string, error)
+}
+
 // requestWindow asks the main goroutine to open the window unless one is open.
-// The URL is built when the window opens, so its login nonce is fresh.
-func requestWindow(url func() string) {
+func requestWindow(links loginLinks) {
 	if windowOpen.Load() {
 		return
 	}
 	select {
-	case windowRequests <- url:
+	case windowRequests <- links:
 	default:
 	}
 }
@@ -44,10 +50,9 @@ func serveWindows(done <-chan int) int {
 		select {
 		case code := <-done:
 			return code
-		case makeURL := <-windowRequests:
-			url := makeURL()
+		case links := <-windowRequests:
 			windowOpen.Store(true)
-			err := openWindow(url)
+			err := openWindow(links.window())
 			windowOpen.Store(false)
 			if err == nil {
 				continue
@@ -55,7 +60,11 @@ func serveWindows(done <-chan int) int {
 			if !errors.Is(err, errNoWindow) {
 				log.Printf("window not opened, using the browser: %v", err)
 			}
-			if err := desktop.OpenBrowser(url); err != nil {
+			url, err := links.browser()
+			if err == nil {
+				err = desktop.OpenBrowser(url)
+			}
+			if err != nil {
 				log.Printf("browser not opened: %v", err)
 			}
 		}

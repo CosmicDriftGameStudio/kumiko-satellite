@@ -17,12 +17,15 @@ const (
 type Nonces struct {
 	Now func() time.Time // replaceable in tests
 
+	ttl     time.Duration
 	mu      sync.Mutex
 	expires map[string]time.Time
 }
 
-func NewNonces() *Nonces {
-	return &Nonces{Now: time.Now, expires: map[string]time.Time{}}
+func NewNonces() *Nonces { return newNonces(nonceTTL) }
+
+func newNonces(ttl time.Duration) *Nonces {
+	return &Nonces{Now: time.Now, ttl: ttl, expires: map[string]time.Time{}}
 }
 
 func (n *Nonces) purgeLocked(now time.Time) {
@@ -33,7 +36,7 @@ func (n *Nonces) purgeLocked(now time.Time) {
 	}
 }
 
-// New returns a fresh nonce valid for 60 seconds; at most 8 stay open, the oldest goes first.
+// New returns a fresh nonce valid for its store's lifetime (60 s for login nonces); at most 8 stay open, the oldest goes first.
 func (n *Nonces) New() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -53,7 +56,7 @@ func (n *Nonces) New() (string, error) {
 		}
 		delete(n.expires, oldest)
 	}
-	n.expires[v] = now.Add(nonceTTL)
+	n.expires[v] = now.Add(n.ttl)
 	return v, nil
 }
 

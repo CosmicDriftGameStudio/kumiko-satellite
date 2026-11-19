@@ -18,6 +18,8 @@ import (
 type Info struct {
 	Port   int    `json:"port"`
 	Secret string `json:"secret"`
+	// PID is a hint for people looking at the file, never checked.
+	PID int `json:"pid,omitempty"`
 }
 
 func Path() (string, error) {

@@ -14,7 +14,7 @@ func TestWriteIsOwnerOnlyAndRoundTrips(t *testing.T) {
 	if err != nil || len(secret) != 64 {
 		t.Fatalf("secret %q, %v", secret, err)
 	}
-	if err := Write(path, Info{Port: 8765, Secret: secret}); err != nil {
+	if err := Write(path, Info{Port: 8765, Secret: secret, PID: 42}); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.GOOS != "windows" {
@@ -23,7 +23,7 @@ func TestWriteIsOwnerOnlyAndRoundTrips(t *testing.T) {
 		}
 	}
 	got, err := Read(path)
-	if err != nil || got.Port != 8765 || got.Secret != secret {
+	if err != nil || got.Port != 8765 || got.Secret != secret || got.PID != 42 {
 		t.Fatalf("read %+v, %v", got, err)
 	}
 	if !strings.HasPrefix(got.LoginURL("n"), "http://127.0.0.1:8765/login?k=") {

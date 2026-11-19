@@ -82,18 +82,25 @@ func gui(ctx context.Context) error {
 		}
 	}
 
+	defer session.Remove(sessionPath)
+	loginDir := filepath.Dir(sessionPath)
+	session.SweepLoginFiles(loginDir, time.Now())
 	nonces := status.NewNonces()
-	loginURL := func() string {
+	newNonce := func() string {
 		nonce, err := nonces.New()
 		if err != nil {
 			log.Printf("login nonce: %v", err)
 		}
-		return info.LoginURL(nonce)
+		return nonce
+	}
+	links := loginLinks{
+		window:  func() string { return info.LoginURL(newNonce()) },
+		browser: func() (string, error) { return loginFileURL(loginDir, info.Port, newNonce()) },
 	}
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: r.source, Wizard: wiz, Settings: r, AppURL: r.AppURL,
-		ShowWindow: func() { requestWindow(loginURL) },
-		Secret:     info.Secret, Nonces: nonces,
+		ShowWindow: func() { requestWindow(links) },
+		Secret:     info.Secret, Port: info.Port, Nonces: nonces, LoginDir: loginDir,
 	})
 	if err != nil {
 		return err
@@ -103,7 +110,7 @@ func gui(ctx context.Context) error {
 	defer srv.Close()
 
 	log.Printf("status page: http://%s/", info.Addr())
-	requestWindow(loginURL)
+	requestWindow(links)
 	<-ctx.Done()
 	return context.Canceled
 }

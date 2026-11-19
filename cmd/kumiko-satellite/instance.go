@@ -1,9 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/desktop"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
@@ -18,8 +19,8 @@ func signalRunning(sessionPath string) error {
 	if err != nil {
 		return fmt.Errorf("no running Kumiko Satellite of your user found: %w", err)
 	}
-	if !status.SignalShow(info.Addr(), info.Secret) {
-		return errors.New("the recorded Kumiko Satellite does not answer")
+	if err := status.SignalShow(info.Addr(), info.Secret); err != nil {
+		return fmt.Errorf("the recorded Kumiko Satellite did not show its window: %w", err)
 	}
 	return nil
 }
@@ -40,7 +41,7 @@ func listenWithSession(addr, sessionPath string) (net.Listener, session.Info, er
 		ln.Close()
 		return nil, session.Info{}, err
 	}
-	info := session.Info{Port: ln.Addr().(*net.TCPAddr).Port, Secret: secret}
+	info := session.Info{Port: ln.Addr().(*net.TCPAddr).Port, Secret: secret, PID: os.Getpid()}
 	if err := session.Write(sessionPath, info); err != nil {
 		ln.Close()
 		return nil, session.Info{}, err
@@ -48,7 +49,7 @@ func listenWithSession(addr, sessionPath string) (net.Listener, session.Info, er
 	return ln, info, nil
 }
 
-// openCommand opens the login link of the running instance in the browser.
+// openCommand opens a login file of the running instance in the browser.
 func openCommand() error {
 	path, err := session.Path()
 	if err != nil {
@@ -62,5 +63,9 @@ func openCommand() error {
 	if err != nil {
 		return fmt.Errorf("the running Kumiko Satellite did not give a login: %w", err)
 	}
-	return desktop.OpenBrowser(info.LoginURL(nonce))
+	loginURL, err := loginFileURL(filepath.Dir(path), info.Port, nonce)
+	if err != nil {
+		return err
+	}
+	return desktop.OpenBrowser(loginURL)
 }

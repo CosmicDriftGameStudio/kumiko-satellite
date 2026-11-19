@@ -2,15 +2,21 @@ package status
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/config"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/desktop"
+	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/setup"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
 )
@@ -29,16 +35,17 @@ type rig struct {
 	settings *fakeSettings
 	shown    int
 	nonces   *Nonces
+	loginDir string
 	src      Source
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{settings: &fakeSettings{}, nonces: NewNonces()}
+	r := &rig{settings: &fakeSettings{}, nonces: NewNonces(), loginDir: t.TempDir()}
 	r.wiz = setup.New(context.Background(), func(config.Config) error { return nil }, func(string) error { return nil })
 	h, err := newTestHandler(Options{
 		Version: "1.0", Source: func() Source { return r.src }, Wizard: r.wiz, Settings: r.settings,
-		AppURL: r.settings.AppURL, ShowWindow: func() { r.shown++ }, Secret: testSecret, Nonces: r.nonces,
+		AppURL: r.settings.AppURL, ShowWindow: func() { r.shown++ }, Secret: testSecret, Port: 8765, Nonces: r.nonces, LoginDir: r.loginDir,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,11 +157,11 @@ func TestSecondInstanceSignalsRunningOne(t *testing.T) {
 	if !IsSatellite(addr) {
 		t.Fatal("running satellite not recognised")
 	}
-	if SignalShow(addr, "wrong") || r.shown != 0 {
-		t.Fatal("a wrong secret must not show the window")
+	if err := SignalShow(addr, "wrong"); !errors.Is(err, ErrForeignServer) || r.shown != 0 {
+		t.Fatalf("a wrong secret must not show the window: %v", err)
 	}
-	if !SignalShow(addr, testSecret) || r.shown != 1 {
-		t.Fatalf("signal: shown = %d", r.shown)
+	if err := SignalShow(addr, testSecret); err != nil || r.shown != 1 {
+		t.Fatalf("signal: %v, shown = %d", err, r.shown)
 	}
 
 	other := httptest.NewServer(http.NotFoundHandler())
@@ -163,7 +170,7 @@ func TestSecondInstanceSignalsRunningOne(t *testing.T) {
 		t.Fatal("a foreign server is not a satellite")
 	}
 	other.Close()
-	if IsSatellite(strings.TrimPrefix(other.URL, "http://")) || SignalShow(strings.TrimPrefix(other.URL, "http://"), testSecret) {
+	if IsSatellite(strings.TrimPrefix(other.URL, "http://")) || SignalShow(strings.TrimPrefix(other.URL, "http://"), testSecret) == nil {
 		t.Fatal("closed port must not count as instance")
 	}
 }
@@ -207,7 +214,7 @@ func TestLoginSetsStrictHttpOnlyCookie(t *testing.T) {
 	if c.Value == testSecret || len(c.Value) != 64 {
 		t.Fatalf("cookie must be a random session ID, not the secret: %q", c.Value)
 	}
-	if c.Name != "ksat_session" || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+	if c.Name != "ksat_session_8765" || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
 		t.Fatalf("cookie %+v", c)
 	}
 }
@@ -239,43 +246,157 @@ func TestNonceWorksOnceAndExpires(t *testing.T) {
 	}
 }
 
-func TestLoginNonceNeedsBearer(t *testing.T) {
+// proof runs the client half of the handshake against h with the given secret.
+func proof(t *testing.T, h http.Handler, secret string) (c2, m string) {
+	t.Helper()
+	c1 := strings.Repeat("ab", 32)
+	w := doJSON(h, "/hello", map[string]string{"c1": c1})
+	var out struct{ S, C2 string }
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
+		t.Fatalf("hello: %d %q", w.Code, w.Body.String())
+	}
+	if out.S != mac(testSecret, "server", c1) {
+		t.Fatal("server answer must be the HMAC of the client challenge")
+	}
+	return out.C2, mac(secret, "client", out.C2)
+}
+
+func doJSON(h http.Handler, path string, body any) *httptest.ResponseRecorder {
+	raw, _ := json.Marshal(body)
+	r := httptest.NewRequest("POST", path, strings.NewReader(string(raw)))
+	r.Host = host
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func TestHandshakeRoutesRejectBadProofs(t *testing.T) {
 	r := newRig(t)
-	for _, hdr := range []map[string]string{{noCookie: "1"}, {noCookie: "1", "Authorization": "Bearer wrong"}, {"Authorization": "Bearer wrong"}} {
-		if c := do(t, r.h, "POST", host, "/login-nonce", hdr, nil).Code; c != 401 {
-			t.Errorf("%v: %d", hdr, c)
+	for _, path := range []string{"/login-nonce", "/show-window"} {
+		if c := doJSON(r.h, path, map[string]string{"c2": "x", "m": "y"}).Code; c != 401 {
+			t.Errorf("%s with made-up proof: %d", path, c)
+		}
+		c2, _ := proof(t, r.h, testSecret)
+		if c := doJSON(r.h, path, map[string]string{"c2": c2, "m": mac("wrong", "client", c2)}).Code; c != 401 {
+			t.Errorf("%s with wrong MAC: %d", path, c)
+		}
+		c2, m := proof(t, r.h, testSecret)
+		if c := doJSON(r.h, path, map[string]string{"c2": c2, "m": m}).Code; c != 200 && c != 204 {
+			t.Errorf("%s with right proof: %d", path, c)
+		}
+		if c := doJSON(r.h, path, map[string]string{"c2": c2, "m": m}).Code; c != 401 {
+			t.Errorf("%s with reused c2: %d", path, c)
 		}
 	}
+	if r.shown != 1 {
+		t.Fatalf("window shown %d times", r.shown)
+	}
+}
+
+func TestChallengeExpires(t *testing.T) {
+	s, _ := newServer(Options{Secret: testSecret, Port: 8765})
+	clock := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
+	s.challenges.Now = func() time.Time { return clock }
+	c2, _ := s.challenges.New()
+	clock = clock.Add(31 * time.Second)
+	if s.challenges.Consume(c2) {
+		t.Fatal("a challenge must expire after 30 s")
+	}
+}
+
+func TestFetchNonceAndSignalOverTheHandshake(t *testing.T) {
+	r := newRig(t)
 	srv := httptest.NewServer(r.h)
 	t.Cleanup(srv.Close)
 	addr := strings.TrimPrefix(srv.URL, "http://")
 	nonce, err := FetchNonce(addr, testSecret)
-	if err != nil || nonce == "" {
+	if err != nil || nonce == "" || !r.nonces.Consume(nonce) {
 		t.Fatalf("fetch: %q, %v", nonce, err)
 	}
-	if _, err := FetchNonce(addr, "wrong"); err == nil {
-		t.Fatal("wrong secret must fail")
-	}
-	if !r.nonces.Consume(nonce) {
-		t.Fatal("the fetched nonce must be valid")
+	if _, err := FetchNonce(addr, "wrong"); !errors.Is(err, ErrForeignServer) {
+		t.Fatalf("wrong secret: %v", err)
 	}
 }
 
-func TestShowWindowNeedsBearer(t *testing.T) {
-	r := newRig(t)
-	for _, hdr := range []map[string]string{
-		{noCookie: "1"},
-		{noCookie: "1", "Authorization": "Bearer wrong"},
-		{"Authorization": "Bearer wrong"},
-	} {
-		if c := do(t, r.h, "POST", host, "/show-window", hdr, nil).Code; c != 401 {
-			t.Errorf("%v: %d", hdr, c)
+func TestForeignServerNeverGetsTheSecret(t *testing.T) {
+	other, err := NewHandler(Options{Secret: "someone-elses", Port: 8765})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var paths, bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 2048)
+		n, _ := r.Body.Read(buf)
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		bodies = append(bodies, r.Header.Get("Authorization")+string(buf[:n]))
+		mu.Unlock()
+		other.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	if _, err := FetchNonce(addr, testSecret); !errors.Is(err, ErrForeignServer) {
+		t.Fatalf("fetch: %v", err)
+	}
+	if err := SignalShow(addr, testSecret); !errors.Is(err, ErrForeignServer) {
+		t.Fatalf("signal: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i, p := range paths {
+		if p != "/hello" || strings.Contains(bodies[i], testSecret) || strings.Contains(bodies[i], mac(testSecret, "client", "")) {
+			t.Fatalf("request %d to %s must not happen or leak: %q", i, p, bodies[i])
 		}
 	}
-	if r.shown != 0 {
-		t.Fatal("window shown without bearer")
+	if len(paths) != 2 {
+		t.Fatalf("paths %v", paths)
 	}
-	if c := do(t, r.h, "POST", host, "/show-window", map[string]string{noCookie: "1", "Authorization": "Bearer " + testSecret}, nil).Code; c != 204 || r.shown != 1 {
-		t.Fatalf("with bearer: %d shown %d", c, r.shown)
+}
+
+func TestLoginFormAcceptsNullOriginOnly(t *testing.T) {
+	r := newRig(t)
+	nonce, _ := r.nonces.New()
+	file, err := session.WriteLoginFile(r.loginDir, 8765, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"nonce": {nonce}, "f": {filepath.Base(file)}}
+	evil := do(t, r.h, "POST", host, "/login", map[string]string{noCookie: "1", "Origin": "http://evil.example"}, form)
+	if evil.Code != 403 || len(evil.Result().Cookies()) != 0 {
+		t.Fatalf("foreign origin: %d", evil.Code)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatal("a refused login must not touch the file")
+	}
+	ok := do(t, r.h, "POST", host, "/login", map[string]string{noCookie: "1", "Origin": "null"}, form)
+	cookies := ok.Result().Cookies()
+	if ok.Code != 200 || len(cookies) != 1 || cookies[0].Name != "ksat_session_8765" || cookies[0].Value == testSecret {
+		t.Fatalf("null origin login: %d %v", ok.Code, cookies)
+	}
+	if _, err := os.Stat(file); err == nil {
+		t.Fatal("the login file must be gone after the login")
+	}
+	again := do(t, r.h, "POST", host, "/login", map[string]string{noCookie: "1", "Origin": "null"}, form)
+	if again.Code != 401 {
+		t.Fatalf("a nonce works once: %d", again.Code)
+	}
+	if w := do(t, r.h, "GET", host, "/login?k="+nonce, map[string]string{noCookie: "1", "Origin": "null"}, nil); w.Code != 401 {
+		t.Fatalf("GET with a used nonce: %d", w.Code)
+	}
+}
+
+func TestCookieOfAnotherPortIsNotAccepted(t *testing.T) {
+	r := newRig(t)
+	if c := do(t, r.h, "GET", "127.0.0.1:9999", "/", nil, nil).Code; c != 401 {
+		t.Fatalf("right cookie on a foreign port: %d", c)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Host = host
+	req.AddCookie(&http.Cookie{Name: "ksat_session_9999", Value: testCookie})
+	w := httptest.NewRecorder()
+	r.h.ServeHTTP(w, req)
+	if w.Code != 401 {
+		t.Fatalf("cookie named for another port: %d", w.Code)
 	}
 }

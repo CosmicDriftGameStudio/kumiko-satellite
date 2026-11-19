@@ -169,7 +169,11 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer ln.Close()
-	handler, err := status.Handler(engine, version, cfg.URL, info.Secret)
+	defer session.Remove(sessionPath)
+	handler, err := status.NewHandler(status.Options{
+		Version: version, Source: func() status.Source { return engine }, AppURL: func() string { return cfg.URL },
+		Secret: info.Secret, Port: info.Port, LoginDir: filepath.Dir(sessionPath),
+	})
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/desktop"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/status"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
@@ -33,7 +35,7 @@ func TestSecondInstanceWithoutSessionFileSendsNothing(t *testing.T) {
 func TestSecondInstanceSignalsViaSessionFile(t *testing.T) {
 	shown := 0
 	h, err := status.NewHandler(status.Options{
-		Version: "1", Secret: "s3cret", Source: func() status.Source { return noSource{} }, ShowWindow: func() { shown++ },
+		Version: "1", Secret: "s3cret", Port: 8765, Source: func() status.Source { return noSource{} }, ShowWindow: func() { shown++ },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -73,5 +75,40 @@ func TestTakenPortFallsBackToFreeOneWithOwnSecret(t *testing.T) {
 	}
 	if got, err := session.Read(path); err != nil || got != info {
 		t.Fatalf("session file %+v, %v", got, err)
+	}
+}
+
+func TestOpenWithForeignServerEndsInError(t *testing.T) {
+	other, err := status.NewHandler(status.Options{Version: "1", Secret: "not-ours", Port: 8765, Source: func() status.Source { return noSource{} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		other.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("APPDATA", dir)
+	path, err := session.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+	if err := session.Write(path, session.Info{Port: port, Secret: "s3cret"}); err != nil {
+		t.Fatal(err)
+	}
+	opened := false
+	old := desktop.OpenBrowser
+	desktop.OpenBrowser = func(string) error { opened = true; return nil }
+	t.Cleanup(func() { desktop.OpenBrowser = old })
+	if err := openCommand(); !errors.Is(err, status.ErrForeignServer) || opened {
+		t.Fatalf("open: %v, browser opened %v", err, opened)
+	}
+	if len(paths) != 1 || paths[0] != "/hello" {
+		t.Fatalf("requests to the foreign server: %v", paths)
 	}
 }
