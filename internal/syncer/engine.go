@@ -82,6 +82,7 @@ type Engine struct {
 	blockedAs  State // StateQuota or StateRevoked while blocked != ""
 	current    string
 	processing bool
+	scanned    bool // the first scan has finished; before that "idle" would be a guess
 	done       int
 	total      int
 	lastErr    string
@@ -129,7 +130,7 @@ func (e *Engine) Snapshot() Snapshot {
 		s.State = StateError
 	case e.processing:
 		s.State = StateSyncing
-	case len(e.queue) > 0 || s.Checking > 0:
+	case len(e.queue) > 0 || s.Checking > 0 || !e.scanned:
 		s.State = StateChecking
 	}
 	s.Events = make([]Event, len(e.events))

@@ -45,12 +45,12 @@ func (e *Engine) Scan() error {
 		present[filepath.ToSlash(rel)] = observation{info.Size(), info.ModTime().UnixNano()}
 		return nil
 	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.scanned = true // also after a failed walk, so an unreadable folder shows its error instead of checking forever
 	if err != nil {
 		return err
 	}
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	for rel, obs := range present {
 		if st, ok := e.state[rel]; ok && st.Size == obs.size && st.MtimeUnixNano == obs.mtime {
 			delete(e.seen, rel)

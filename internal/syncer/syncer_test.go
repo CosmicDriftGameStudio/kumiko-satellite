@@ -109,6 +109,28 @@ func TestFileNeedsTwoScansAndIsUploadedOnce(t *testing.T) {
 	}
 }
 
+func TestStateIsCheckingUntilTheFirstScanFinished(t *testing.T) {
+	h := newHarness(t)
+	h.write("a.txt", "hello")
+	if s := h.e.Snapshot(); s.State != StateChecking {
+		t.Fatalf("before the first scan: %+v", s)
+	}
+	_ = h.e.Scan()
+	h.e.Process(context.Background())
+	if s := h.e.Snapshot(); s.State != StateChecking {
+		t.Fatalf("file still in stability check: %+v", s)
+	}
+	h.cycle()
+	if s := h.e.Snapshot(); s.State != StateIdle {
+		t.Fatalf("after uploading: %+v", s)
+	}
+	empty := newHarness(t)
+	_ = empty.e.Scan()
+	if s := empty.e.Snapshot(); s.State != StateIdle {
+		t.Fatalf("an empty folder is up to date once scanned: %+v", s)
+	}
+}
+
 func TestSymlinkIsNotFollowed(t *testing.T) {
 	h := newHarness(t)
 	outside := t.TempDir()
