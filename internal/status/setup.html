@@ -2,14 +2,11 @@
 <body>
 <main>
   <h1>Set up Kumiko Satellite</h1>
-  <p class="sub">Version {{.Version}}</p>
+  <p class="sub">{{if .FolderStep}}Paired with {{.Host}}{{else}}This computer delivers the files from one folder to your app.{{end}}</p>
 
   {{if .FolderStep}}
   <section class="card">
-    <p class="step">Step 2 of 2</p>
-    <span class="pill ok">Paired</span>
-    <h2 style="margin-top:12px">Choose folder</h2>
-    <p class="sub">Which folder should be uploaded?</p>
+    <div class="steps"><span class="done">✓ Connect</span> › <span class="on" aria-current="step">2 Folder</span></div>
     <form method="post" action="/setup/folder">
       <input type="hidden" name="token" value="{{.Token}}">
       <label for="folder">Folder</label>
@@ -17,43 +14,45 @@
         <input type="text" id="folder" name="folder" value="{{.State.Folder}}" placeholder="Folder whose files are uploaded" autocomplete="off">
         {{if .CanPick}}<button type="submit" formaction="/setup/pick" class="quiet">Browse…</button>{{end}}
       </div>
+      <p class="help">New and changed files in this folder are sent to the app.</p>
       {{if .State.FolderErr}}<p class="field-err">{{.State.FolderErr}}</p>{{end}}
       <label class="check"><input type="checkbox" name="autostart" value="on"{{if not .State.NoAutostart}} checked{{end}}> Start automatically when I sign in</label>
-      <button type="submit">Done</button>
+      <div class="actions"><button type="submit">Done</button></div>
     </form>
   </section>
   {{else}}
   <section class="card">
-    <p class="step">Step 1 of 2</p>
-    <h2>Connect to your app</h2>
+    <div class="steps"><span class="on" aria-current="step">1 Connect</span> › <span>2 Folder</span></div>
     <form method="post" action="/setup/start">
       <input type="hidden" name="token" value="{{.Token}}">
       <label for="url">App address</label>
-      <input type="text" id="url" name="url" value="{{.State.URL}}" placeholder="https://app.company.com" autocomplete="off">
+      <div class="row">
+        <input type="text" id="url" name="url" value="{{.State.URL}}" placeholder="https://app.company.com" autocomplete="off">
+        <button type="submit"{{if .Waiting}} disabled{{end}}>{{if .Failed}}Get a new code{{else}}Pair{{end}}</button>
+      </div>
+      <p class="help">The address you use to sign in to the app.</p>
       {{if .State.URLErr}}<p class="field-err">{{.State.URLErr}}</p>{{end}}
-      <button type="submit">{{if or .Waiting .Failed}}Get a new code{{else}}Pair{{end}}</button>
     </form>
-  </section>
-  {{if .Waiting}}
-  <section class="card">
-    <span class="pill active">Waiting for confirmation</span>
-    <p class="hint">An admin of your company confirms this code in the app:</p>
-    <div class="code">{{.State.Code}}</div>
-    <progress></progress>
-    <p class="sub">{{if .MinutesLeft}}Waiting for confirmation, code valid for {{.MinutesLeft}} more minute{{if ne .MinutesLeft 1}}s{{end}}.{{else}}Waiting for confirmation.{{end}}</p>
-    {{if .State.ConfirmURL}}<form method="post" action="/setup/open">
-      <input type="hidden" name="token" value="{{.Token}}">
-      <button type="submit">Confirm in the app</button>
-    </form>{{end}}
+    {{if .Waiting}}
+    <div class="codebox">
+      <div>An admin of your company confirms this code in the app:</div>
+      <div class="code">{{.State.Code}}</div>
+      {{if .State.ConfirmURL}}<form method="post" action="/setup/open">
+        <input type="hidden" name="token" value="{{.Token}}">
+        <button type="submit">Confirm in the app</button>
+      </form>{{end}}
+      <div class="wait"><span class="spin"></span>{{if .MinutesLeft}}Waiting for confirmation, code valid for {{.MinutesLeft}} more minute{{if ne .MinutesLeft 1}}s{{end}}{{else}}Waiting for confirmation{{end}}</div>
+    </div>
+    {{end}}
+    {{if .Failed}}
+    <div class="codebox">
+      <span class="pill bad"><span aria-hidden="true">●</span> Pairing did not finish</span>
+      <p class="hint">{{.State.Failure}}</p>
+    </div>
+    {{end}}
   </section>
   {{end}}
-  {{if .Failed}}
-  <section class="card">
-    <span class="pill bad">Pairing did not finish</span>
-    <p class="hint">{{.State.Failure}}</p>
-  </section>
-  {{end}}
-  {{end}}
+  <footer class="ver">Version {{.Version}}</footer>
 </main>
 </body>
 </html>

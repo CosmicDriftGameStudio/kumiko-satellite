@@ -61,7 +61,7 @@ type Options struct {
 	Nonces *Nonces
 }
 
-//go:embed layout.html page.html setup.html settings.html
+//go:embed layout.html page.html setup.html settings.html denied.html
 var templateFS embed.FS
 
 //go:embed fonts/*.woff2
@@ -75,6 +75,7 @@ var (
 	page         = parse("page.html")
 	setupPage    = parse("setup.html")
 	settingsPage = parse("settings.html")
+	deniedPage   = parse("denied.html")
 )
 
 // ValidateAddr only allows loopback listeners: the page offers buttons and shows file names.
@@ -250,9 +251,9 @@ func secretEqual(got, want string) bool {
 
 // unauthorized answers without any state, file name or token.
 func unauthorized(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte("Open Kumiko Satellite from its icon.\n"))
+	_ = deniedPage.Execute(w, nil)
 }
 
 // loginLink is the in-process path: the window gets the URL without a command line.
@@ -379,6 +380,7 @@ type view struct {
 	ShowRetry                              bool
 	ShowCounters                           bool
 	ShowRepair, ShowSettings               bool
+	Subtitle                               string
 	Refresh                                int
 }
 
@@ -418,7 +420,7 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		v.Hint = "An admin has to free up space in the app or raise the limit. Then press “Retry”."
 	case syncer.StateRevoked:
 		v.StateClass, v.StateLabel = "bad", "Device revoked"
-		v.ShowRetry, v.ShowProgress = false, false
+		v.ShowRetry, v.ShowProgress, v.LastError = false, false, ""
 		if s.opt.Wizard != nil {
 			v.Hint = "This satellite has to be paired with the app again."
 			v.ShowRepair = true
@@ -431,13 +433,27 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 	default:
 		v.StateClass, v.StateLabel = "ok", "Up to date"
 	}
+	if host := hostOf(s.appURL()); host != "" {
+		v.Subtitle = "Paired with " + host
+		if s.opt.Settings != nil && s.opt.Settings.Folder() != "" {
+			v.Subtitle += " · " + s.opt.Settings.Folder()
+		}
+	}
 	if !snap.LastSyncAt.IsZero() {
-		v.LastSync = snap.LastSyncAt.Local().Format("02.01.2006 15:04:05")
+		v.LastSync = snap.LastSyncAt.Local().Format("Jan 2, 2006, 3:04 PM")
 	}
 	for _, ev := range snap.Events {
-		v.Events = append(v.Events, eventView{ev.Time.Local().Format("02.01. 15:04:05"), ev.Message, ev.Error})
+		v.Events = append(v.Events, eventView{ev.Time.Local().Format("3:04:05 PM"), ev.Message, ev.Error})
 	}
 	render(w, page, v)
+}
+
+// hostOf is what the header shows for the paired app.
+func hostOf(appURL string) string {
+	if u, err := url.Parse(appURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return appURL
 }
 
 func render(w http.ResponseWriter, t *template.Template, data any) {

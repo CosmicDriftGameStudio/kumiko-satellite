@@ -2,7 +2,7 @@
 <body>
 <main>
   <h1>Settings</h1>
-  <p class="sub">Version {{.Version}} &middot; <a href="/">Back to status</a></p>
+  <p class="sub"><a href="/">Back to status</a></p>
 
   {{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
   <section class="card">
@@ -14,7 +14,7 @@
         {{if .CanPick}}<button type="submit" formaction="/settings/pick" class="quiet">Browse…</button>{{end}}
       </div>
       {{if .FolderErr}}<p class="field-err">{{.FolderErr}}</p>{{end}}
-      <button type="submit">Save folder</button>
+      <div class="actions"><button type="submit">Save folder</button></div>
     </form>
   </section>
 
@@ -22,9 +22,10 @@
     <form method="post" action="/settings/autostart">
       <input type="hidden" name="token" value="{{.Token}}">
       <label class="check" style="margin-top:0"><input type="checkbox" name="autostart" value="on"{{if .Autostart}} checked{{end}}> Start automatically when I sign in</label>
-      <button type="submit">Apply</button>
+      <div class="actions"><button type="submit">Apply</button></div>
     </form>
   </section>
+  <footer class="ver">Version {{.Version}}</footer>
 </main>
 </body>
 </html>

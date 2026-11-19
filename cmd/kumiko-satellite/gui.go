@@ -18,6 +18,7 @@ import (
 const (
 	defaultStatusAddr = "127.0.0.1:8765"
 	maxLogBytes       = 1 << 20
+	shutdownGrace     = 3 * time.Second
 )
 
 // setupLog mirrors log output into a file next to state.json: the Windows exe
@@ -40,6 +41,15 @@ func setupLog() {
 }
 
 // gui is the double-click mode: local page for setup and status, sync in this process.
+// shutdown lets running requests finish for a moment, then closes the server.
+func shutdown(srv *http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if srv.Shutdown(ctx) != nil {
+		srv.Close()
+	}
+}
+
 func gui(ctx context.Context) error {
 	sessionPath, err := session.Path()
 	if err != nil {
@@ -53,6 +63,7 @@ func gui(ctx context.Context) error {
 		return err
 	}
 	defer ln.Close()
+	defer session.Remove(sessionPath)
 
 	cfgPath, err := config.Path()
 	if err != nil {
@@ -82,7 +93,6 @@ func gui(ctx context.Context) error {
 		}
 	}
 
-	defer session.Remove(sessionPath)
 	loginDir := filepath.Dir(sessionPath)
 	session.SweepLoginFiles(loginDir, time.Now())
 	nonces := status.NewNonces()
@@ -107,7 +117,7 @@ func gui(ctx context.Context) error {
 	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer shutdown(srv)
 
 	log.Printf("status page: http://%s/", info.Addr())
 	requestWindow(links)

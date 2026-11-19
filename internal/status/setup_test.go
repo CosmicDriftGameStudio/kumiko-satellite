@@ -400,3 +400,59 @@ func TestCookieOfAnotherPortIsNotAccepted(t *testing.T) {
 		t.Fatalf("cookie named for another port: %d", w.Code)
 	}
 }
+
+func TestSetupPagesFollowTheDesign(t *testing.T) {
+	r := newRig(t)
+	first := r.get(t, "/")
+	for _, want := range []string{"1 Connect", "This computer delivers the files from one folder to your app.", "Version 1.0", ">Pair<"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("step 1 misses %q", want)
+		}
+	}
+	for _, gone := range []string{"Step 1 of 2", "Connect to your app", "refreshes every", "Get a new code", " disabled"} {
+		if strings.Contains(first, gone) {
+			t.Errorf("step 1 still has %q", gone)
+		}
+	}
+	r.wiz.OpenFolder("https://app.example.com", "")
+	second := r.get(t, "/")
+	for _, want := range []string{"✓ Connect", "2 Folder", "Paired with app.example.com", "New and changed files in this folder are sent to the app."} {
+		if !strings.Contains(second, want) {
+			t.Errorf("step 2 misses %q", want)
+		}
+	}
+	if strings.Contains(second, "Which folder should be uploaded?") || strings.Contains(second, "Step 2 of 2") {
+		t.Error("step 2 keeps the old wording")
+	}
+}
+
+func TestStatusPageFollowsTheDesign(t *testing.T) {
+	r := newRig(t)
+	at := time.Date(2026, 11, 19, 18, 42, 5, 0, time.Local)
+	r.src = &fakeSource{snap: &syncer.Snapshot{State: syncer.StateIdle, Done: 3, Total: 3, LastSyncAt: at,
+		Events: []syncer.Event{{Time: at, Message: "done"}}}}
+	body := r.get(t, "/")
+	for _, want := range []string{"Paired with app.example.com · /data", "3 of 3 files delivered", `<progress class="ok"`, "Nov 19, 2026, 6:42 PM",
+		"6:42:05 PM", "<details>", "<summary>Log</summary>", `href="/settings"`, ">Failed<", "Version 1.0", ">●<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status page misses %q", want)
+		}
+	}
+	if strings.Contains(body, ">Waiting<") || strings.Contains(body, "refreshes every") || strings.Contains(body, "Log (last 200 events)") {
+		t.Error("status page keeps old elements")
+	}
+	r.src = &fakeSource{snap: &syncer.Snapshot{State: syncer.StateRevoked, LastError: "Device revoked, pair again"}}
+	if rev := r.get(t, "/"); strings.Contains(rev, "Last error") {
+		t.Error("a revoked device must not repeat its reason as Last error")
+	}
+}
+
+func TestDeniedPageUsesTheSameLayout(t *testing.T) {
+	r := newRig(t)
+	w := do(t, r.h, "GET", host, "/", map[string]string{noCookie: "1"}, nil)
+	body := w.Body.String()
+	if w.Code != 401 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") ||
+		!strings.Contains(body, "IBM Plex Sans") || !strings.Contains(body, "Kumiko Satellite") || !strings.Contains(body, "Open Kumiko Satellite from its icon.") {
+		t.Fatalf("denied page: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+}

@@ -18,13 +18,14 @@ type setupView struct {
 	CanPick        bool
 	Refresh        int
 	MinutesLeft    int
+	Host           string
 }
 
 func (s *server) renderSetup(w http.ResponseWriter, st setup.State) {
 	v := setupView{
 		Token: s.token, Version: s.opt.Version, State: st,
 		Waiting: st.Phase == setup.PhaseWaiting, Failed: st.Phase == setup.PhaseFailed,
-		FolderStep: st.Phase == setup.PhaseFolder, CanPick: desktop.DialogAvailable(),
+		FolderStep: st.Phase == setup.PhaseFolder, CanPick: desktop.DialogAvailable(), Host: hostOf(st.URL),
 	}
 	if v.Waiting {
 		v.Refresh = 3

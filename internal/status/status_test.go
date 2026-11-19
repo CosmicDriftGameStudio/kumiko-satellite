@@ -168,7 +168,7 @@ func TestStatesQuotaRevokedChecking(t *testing.T) {
 	if !strings.Contains(c, "Checking new files") || strings.Contains(c, "Up to date") || !strings.Contains(c, "Being checked") {
 		t.Error("checking page wrong")
 	}
-	if e := get(syncer.Snapshot{State: syncer.StateError}); !strings.Contains(e, ">Error<") || !strings.Contains(e, "Retry") {
+	if e := get(syncer.Snapshot{State: syncer.StateError}); !strings.Contains(e, "pill bad") || !strings.Contains(e, "</span> Error</span>") || !strings.Contains(e, "Retry") {
 		t.Error("plain error stays red with retry")
 	}
 }

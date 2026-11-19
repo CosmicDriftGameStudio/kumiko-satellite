@@ -23,6 +23,8 @@ func openWindow(url string) error {
 		return errors.New("WebView2 is not available")
 	}
 	defer w.Destroy()
+	setWindowCloser(func() { w.Dispatch(w.Terminate) })
+	defer clearWindowCloser()
 	w.Navigate(url)
 	w.Run()
 	return nil

@@ -35,7 +35,11 @@ func main() {
 	attachParentConsole()
 	setupLog()
 	done := make(chan int, 1)
-	go func() { done <- realMain() }()
+	go func() {
+		code := realMain()
+		done <- code
+		closeWindows()
+	}()
 	os.Exit(serveWindows(done))
 }
 
@@ -179,7 +183,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer shutdown(srv)
 
 	log.Printf("Watching %s. Status: open Kumiko Satellite or run `kumiko-satellite open`", root)
 	go engine.RunHeartbeat(ctx, client, version, heartbeatEvery)

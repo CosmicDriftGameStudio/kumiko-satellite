@@ -21,6 +21,8 @@ var errNoWindow = errors.New("no window on this platform")
 func init() { runtime.LockOSThread() }
 
 var (
+	shuttingDown   atomic.Bool
+	windowCloser   atomic.Pointer[func()]
 	windowRequests = make(chan loginLinks, 1)
 	windowOpen     atomic.Bool
 )
@@ -43,6 +45,26 @@ func requestWindow(links loginLinks) {
 	}
 }
 
+// setWindowCloser registers how to close the open window from another
+// goroutine; it fires at once when the program is already shutting down.
+func setWindowCloser(closeFn func()) {
+	windowCloser.Store(&closeFn)
+	if shuttingDown.Load() {
+		closeFn()
+	}
+}
+
+func clearWindowCloser() { windowCloser.Store(nil) }
+
+// closeWindows ends a window the main goroutine is blocked in, so that the
+// program can exit after SIGTERM, and keeps later requests from opening one.
+func closeWindows() {
+	shuttingDown.Store(true)
+	if f := windowCloser.Load(); f != nil {
+		(*f)()
+	}
+}
+
 // serveWindows runs on the main goroutine until the program is done. Closing a
 // window does not stop the sync; a later start asks for a new window.
 func serveWindows(done <-chan int) int {
@@ -51,6 +73,9 @@ func serveWindows(done <-chan int) int {
 		case code := <-done:
 			return code
 		case links := <-windowRequests:
+			if shuttingDown.Load() {
+				continue
+			}
 			windowOpen.Store(true)
 			err := openWindow(links.window())
 			windowOpen.Store(false)

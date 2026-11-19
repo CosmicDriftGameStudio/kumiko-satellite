@@ -8,6 +8,8 @@ import webview "github.com/webview/webview_go"
 func openWindow(url string) error {
 	w := webview.New(false)
 	defer w.Destroy()
+	setWindowCloser(func() { w.Dispatch(w.Terminate) })
+	defer clearWindowCloser()
 	w.SetTitle(windowTitle)
 	w.SetSize(windowWidth, windowHeight, webview.HintNone)
 	w.Navigate(url)
