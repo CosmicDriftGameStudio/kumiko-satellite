@@ -92,7 +92,7 @@ func TestHostCheck(t *testing.T) {
 func TestPageContent(t *testing.T) {
 	h, _ := testHandler(&fakeSource{})
 	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
-	for _, want := range []string{"12 of 340", "a.pdf", "Retry", "&lt;b&gt;boom&lt;/b&gt;", `http-equiv="refresh"`} {
+	for _, want := range []string{"12 of 340", "a.pdf", "Retry", "&lt;b&gt;boom&lt;/b&gt;", `data-refresh="5"`, "<script nonce="} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page misses %q", want)
 		}

@@ -2,6 +2,7 @@
 package status
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
@@ -164,6 +165,7 @@ func (s *server) handler() http.Handler {
 	if opt.Wizard != nil {
 		mux.HandleFunc("POST /setup/pick", s.post(s.setupPick))
 		mux.HandleFunc("POST /setup/start", s.post(s.setupStart))
+		mux.HandleFunc("POST /setup/cancel", s.post(s.setupCancel))
 		mux.HandleFunc("POST /setup/open", s.post(s.setupOpen))
 		mux.HandleFunc("POST /setup/folder", s.post(s.setupFolder))
 		mux.HandleFunc("POST /setup/repair", s.post(s.setupRepair))
@@ -217,13 +219,28 @@ func (s *server) guard(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set(instanceHeader, "1")
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; form-action 'self'; frame-ancestors 'none'")
+		raw := make([]byte, 16)
+		if _, err := rand.Read(raw); err != nil {
+			http.Error(w, "no nonce", http.StatusInternalServerError)
+			return
+		}
+		nonce := hex.EncodeToString(raw)
+		// Only the page's own refresh script runs, tied to this response by its nonce.
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; connect-src 'self'; style-src 'unsafe-inline'; font-src 'self'; form-action 'self'; frame-ancestors 'none'")
+		r = r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce))
 		if !s.open(r) && !s.authorized(r) {
 			unauthorized(w)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+type nonceKey struct{}
+
+func nonceOf(r *http.Request) string {
+	n, _ := r.Context().Value(nonceKey{}).(string)
+	return n
 }
 
 // cookieName carries the port: browsers share cookies between ports of one host.
@@ -380,7 +397,7 @@ type view struct {
 	ShowRetry                              bool
 	ShowCounters                           bool
 	ShowRepair, ShowSettings               bool
-	Subtitle                               string
+	Subtitle, Nonce                        string
 	Refresh                                int
 }
 
@@ -393,7 +410,7 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 			st = s.opt.Wizard.State()
 		}
 		if st.Phase != setup.PhaseIdle {
-			s.renderSetup(w, st)
+			s.renderSetup(w, r, st)
 			return
 		}
 	}
@@ -408,7 +425,7 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		ShowProgress: snap.Total > 0, LastSync: "never", Checking: snap.Checking,
 		ShowCounters: snap.State != syncer.StateRevoked,
 		ShowRetry:    snap.State == syncer.StateQuota || snap.State == syncer.StateError || snap.Failed > 0,
-		ShowSettings: s.opt.Settings != nil, Refresh: 5,
+		ShowSettings: s.opt.Settings != nil, Refresh: 5, Nonce: nonceOf(r),
 	}
 	switch snap.State {
 	case syncer.StateSyncing:

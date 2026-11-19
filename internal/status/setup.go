@@ -19,13 +19,23 @@ type setupView struct {
 	Refresh        int
 	MinutesLeft    int
 	Host           string
+	Nonce, Page    string
 }
 
-func (s *server) renderSetup(w http.ResponseWriter, st setup.State) {
+func (s *server) renderSetup(w http.ResponseWriter, r *http.Request, st setup.State) {
 	v := setupView{
 		Token: s.token, Version: s.opt.Version, State: st,
 		Waiting: st.Phase == setup.PhaseWaiting, Failed: st.Phase == setup.PhaseFailed,
 		FolderStep: st.Phase == setup.PhaseFolder, CanPick: desktop.DialogAvailable(), Host: hostOf(st.URL),
+		Nonce: nonceOf(r), Page: "form",
+	}
+	switch st.Phase {
+	case setup.PhaseWaiting:
+		v.Page = "waiting"
+	case setup.PhaseFailed:
+		v.Page = "failed"
+	case setup.PhaseFolder:
+		v.Page = "folder"
 	}
 	if v.Waiting {
 		v.Refresh = 3
@@ -34,6 +44,12 @@ func (s *server) renderSetup(w http.ResponseWriter, st setup.State) {
 		}
 	}
 	render(w, setupPage, v)
+}
+
+// setupCancel drops the running pairing and frees the address field again.
+func (s *server) setupCancel(w http.ResponseWriter, r *http.Request) {
+	s.opt.Wizard.Cancel()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *server) setupStart(w http.ResponseWriter, r *http.Request) {

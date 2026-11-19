@@ -1,5 +1,5 @@
 {{template "head" .Refresh}}
-<body>
+<body data-page="{{.Page}}" data-refresh="{{.Refresh}}">
 <main>
   <h1>Set up Kumiko Satellite</h1>
   <p class="sub">{{if .FolderStep}}Paired with {{.Host}}{{else}}This computer delivers the files from one folder to your app.{{end}}</p>
@@ -41,7 +41,11 @@
         <input type="hidden" name="token" value="{{.Token}}">
         <button type="submit">Confirm in the app</button>
       </form>{{end}}
-      <div class="wait"><span class="spin"></span>{{if .MinutesLeft}}Waiting for confirmation, code valid for {{.MinutesLeft}} more minute{{if ne .MinutesLeft 1}}s{{end}}{{else}}Waiting for confirmation{{end}}</div>
+      <div class="wait" data-live="wait"><span class="spin"></span>{{if .MinutesLeft}}Waiting for confirmation, code valid for {{.MinutesLeft}} more minute{{if ne .MinutesLeft 1}}s{{end}}{{else}}Waiting for confirmation{{end}}</div>
+      <form method="post" action="/setup/cancel">
+        <input type="hidden" name="token" value="{{.Token}}">
+        <button type="submit" class="linkbtn">Cancel</button>
+      </form>
     </div>
     {{end}}
     {{if .Failed}}
@@ -52,7 +56,8 @@
     {{end}}
   </section>
   {{end}}
-  <footer class="ver">Version {{.Version}}</footer>
+  <footer class="ver">Version {{.Version}}<noscript> &middot; <a href="/">Refresh</a></noscript></footer>
 </main>
+{{if .Refresh}}{{template "live" .Nonce}}{{end}}
 </body>
 </html>

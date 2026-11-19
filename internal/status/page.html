@@ -1,10 +1,11 @@
 {{template "head" .Refresh}}
-<body>
+<body data-page="status" data-refresh="{{.Refresh}}">
 <main>
   <h1>Kumiko Satellite</h1>
   {{if .Subtitle}}<p class="sub">{{.Subtitle}}</p>{{end}}
 
   <section class="card">
+    <div data-live="status">
     <span class="pill {{.StateClass}}"><span aria-hidden="true">●</span> {{.StateLabel}}</span>
     {{if .ShowProgress}}
     <progress class="{{.StateClass}}" value="{{.Done}}" max="{{.Total}}"></progress>
@@ -29,19 +30,21 @@
       <input type="hidden" name="token" value="{{.Token}}">
       <button type="submit">Retry</button>
     </form>{{end}}
+    </div>
     <div class="foot">
       <details>
         <summary>Log</summary>
-        {{if .Events}}
+        <div data-live="log">{{if .Events}}
         <ul>
           {{range .Events}}<li{{if .Error}} class="bad"{{end}}><time>{{.Time}}</time><span>{{.Message}}</span></li>{{end}}
         </ul>
-        {{else}}<p class="sub">No events yet.</p>{{end}}
+        {{else}}<p class="sub">No events yet.</p>{{end}}</div>
       </details>
       {{if .ShowSettings}}<a href="/settings">Settings</a>{{end}}
     </div>
   </section>
-  <footer class="ver">Version {{.Version}}</footer>
+  <footer class="ver">Version {{.Version}}<noscript> &middot; <a href="/">Refresh</a></noscript></footer>
 </main>
+{{template "live" .Nonce}}
 </body>
 </html>

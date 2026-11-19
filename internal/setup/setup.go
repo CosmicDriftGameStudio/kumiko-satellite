@@ -60,6 +60,7 @@ type Wizard struct {
 	keep   string // folder to keep when re-pairing
 	gen    int
 	cancel context.CancelFunc
+	done   chan struct{} // closed when the poll loop of the current pairing has ended
 }
 
 func New(ctx context.Context, onPaired func(config.Config) error, onFolder func(string) error) *Wizard {
@@ -179,7 +180,29 @@ func (w *Wizard) Submit(appURL string) {
 	w.st = st
 	keep := w.keep
 	w.mu.Unlock()
-	go w.poll(pollCtx, gen, flow, auth, config.Config{URL: appURL, Folder: keep})
+	done := make(chan struct{})
+	w.done = done
+	go func() {
+		defer close(done)
+		w.poll(pollCtx, gen, flow, auth, config.Config{URL: appURL, Folder: keep})
+	}()
+}
+
+// Cancel drops a running pairing: the poll loop ends, the code is discarded
+// locally and the address field is free again.
+func (w *Wizard) Cancel() {
+	w.mu.Lock()
+	if w.st.Phase != PhaseWaiting {
+		w.mu.Unlock()
+		return
+	}
+	w.stopLocked()
+	done := w.done
+	w.st = State{Phase: PhaseForm, URL: w.st.URL}
+	w.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 }
 
 func (w *Wizard) poll(ctx context.Context, gen int, flow *pairing.Flow, auth pairing.Authorization, cfg config.Config) {

@@ -97,7 +97,7 @@ func TestSetupStepsAreOrderedAddressFirstThenFolder(t *testing.T) {
 
 func TestSetupPostsNeedTokenAndOrigin(t *testing.T) {
 	r := newRig(t)
-	for _, target := range []string{"/setup/start", "/setup/pick", "/setup/folder", "/setup/open", "/setup/repair", "/settings/folder"} {
+	for _, target := range []string{"/setup/start", "/setup/cancel", "/setup/pick", "/setup/folder", "/setup/open", "/setup/repair", "/settings/folder"} {
 		if c := do(t, r.h, "POST", host, target, map[string]string{"Origin": "http://" + host}, url.Values{}).Code; c != 403 {
 			t.Errorf("%s without token: %d", target, c)
 		}
@@ -454,5 +454,58 @@ func TestDeniedPageUsesTheSameLayout(t *testing.T) {
 	if w.Code != 401 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") ||
 		!strings.Contains(body, "IBM Plex Sans") || !strings.Contains(body, "Kumiko Satellite") || !strings.Contains(body, "Open Kumiko Satellite from its icon.") {
 		t.Fatalf("denied page: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+}
+
+func TestLiveUpdateScriptIsTiedToTheResponseNonce(t *testing.T) {
+	r := newRig(t)
+	r.src = &fakeSource{}
+	w := do(t, r.h, "GET", host, "/", nil, nil)
+	csp, body := w.Header().Get("Content-Security-Policy"), w.Body.String()
+	i := strings.Index(csp, "script-src 'nonce-")
+	if i < 0 || strings.Contains(csp, "script-src 'unsafe-inline'") || strings.Contains(csp, "'unsafe-eval'") {
+		t.Fatalf("csp %q", csp)
+	}
+	nonce := strings.SplitN(csp[i+len("script-src 'nonce-"):], "'", 2)[0]
+	if !strings.Contains(body, `<script nonce="`+nonce+`">`) || !strings.Contains(csp, "connect-src 'self'") {
+		t.Fatal("the script must carry this response's nonce")
+	}
+	if other := do(t, r.h, "GET", host, "/", nil, nil).Header().Get("Content-Security-Policy"); other == csp {
+		t.Fatal("every response needs its own nonce")
+	}
+	for _, want := range []string{`data-live="status"`, `data-live="log"`, "<details>", `data-page="status"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page misses %q", want)
+		}
+	}
+	if strings.Contains(body, "http-equiv") || !strings.Contains(body, "<noscript>") || !strings.Contains(body, "Refresh") {
+		t.Error("no meta refresh; a Refresh link for browsers without scripts")
+	}
+}
+
+func TestCancelFreesTheAddressFieldAgain(t *testing.T) {
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "device_authorization") {
+			_, _ = w.Write([]byte(`{"device_code":"d","user_code":"AB12-CD34","verification_uri":"https://app/pair","expires_in":600,"interval":5}`))
+			return
+		}
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":"authorization_pending"}`))
+	}))
+	t.Cleanup(app.Close)
+	r := newRig(t)
+	r.wiz.Submit(app.URL)
+	waiting := r.get(t, "/")
+	for _, want := range []string{"AB12-CD34", `action="/setup/cancel"`, ">Cancel<", " disabled", `data-page="waiting"`, `data-live="wait"`, `<script nonce=`} {
+		if !strings.Contains(waiting, want) {
+			t.Errorf("waiting page misses %q", want)
+		}
+	}
+	if c := r.post(t, "/setup/cancel", url.Values{}).Code; c != 303 {
+		t.Fatalf("cancel: %d", c)
+	}
+	form := r.get(t, "/")
+	if strings.Contains(form, "AB12-CD34") || strings.Contains(form, " disabled") || !strings.Contains(form, `data-page="form"`) || !strings.Contains(form, app.URL) {
+		t.Error("after cancel the code is gone, Pair is active and the address stays")
 	}
 }

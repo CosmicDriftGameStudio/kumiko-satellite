@@ -1,8 +1,31 @@
+{{define "live"}}<script nonce="{{.}}">
+(function () {
+  var every = (parseInt(document.body.getAttribute("data-refresh"), 10) || 5) * 1000;
+  function sync() {
+    fetch(location.pathname, { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (text) {
+        if (!text) { return; }
+        var doc = new DOMParser().parseFromString(text, "text/html");
+        var active = document.activeElement;
+        if (doc.body.getAttribute("data-page") !== document.body.getAttribute("data-page")) {
+          if (!(active && active.tagName === "INPUT")) { location.reload(); }
+          return;
+        }
+        document.querySelectorAll("[data-live]").forEach(function (el) {
+          var next = doc.querySelector('[data-live="' + el.getAttribute("data-live") + '"]');
+          if (next && !el.contains(active) && el.innerHTML !== next.innerHTML) { el.innerHTML = next.innerHTML; }
+        });
+      })
+      .catch(function () {});
+  }
+  setInterval(sync, every);
+})();
+</script>{{end}}
 {{define "head"}}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-{{if .}}<meta http-equiv="refresh" content="{{.}}">{{end}}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kumiko Satellite</title>
 <style>
@@ -79,6 +102,7 @@
   li:first-child { border-top:0; }
   time { color:var(--muted-fg); white-space:nowrap; font-variant-numeric:tabular-nums; }
   li.bad span { color:var(--bad-fg); }
+  .linkbtn { margin-top:10px; padding:0; border:0; background:none; color:var(--muted-fg); font-size:13px; font-weight:400; text-decoration:underline; text-underline-offset:3px; }
   .ver { margin-top:8px; color:var(--muted-fg); font-size:12px; text-align:center; }
 </style>
 </head>{{end}}

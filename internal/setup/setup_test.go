@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -122,4 +123,41 @@ func TestConfirmLinkFallsBackAndRefusesOddSchemes(t *testing.T) {
 	if got := confirmLink(pairing.Authorization{VerificationURIComplete: "javascript:alert(1)", VerificationURI: "http://evil.example.com/p"}); got != "" {
 		t.Fatalf("unsafe links must not be offered: %q", got)
 	}
+}
+
+func TestCancelEndsPollLoopAndAllowsNewCode(t *testing.T) {
+	var tokenHits, codes atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/connectors/v1/device_authorization", func(w http.ResponseWriter, r *http.Request) {
+		codes.Add(1)
+		_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"AB12-CD34","verification_uri":"https://app/pair","expires_in":600,"interval":5}`))
+	})
+	mux.HandleFunc("/connectors/v1/token", func(w http.ResponseWriter, r *http.Request) {
+		tokenHits.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"authorization_pending"}`))
+	})
+	app := httptest.NewServer(mux)
+	t.Cleanup(app.Close)
+
+	r := newRig(t)
+	r.w.Submit(app.URL)
+	if r.w.State().Phase != PhaseWaiting {
+		t.Fatalf("not waiting: %+v", r.w.State())
+	}
+	r.w.Cancel()
+	st := r.w.State()
+	if st.Phase != PhaseForm || st.URL != app.URL || st.Code != "" {
+		t.Fatalf("after cancel: %+v", st)
+	}
+	hits := tokenHits.Load()
+	time.Sleep(100 * time.Millisecond)
+	if tokenHits.Load() != hits {
+		t.Fatal("the poll loop kept asking /token after the cancel")
+	}
+	r.w.Submit(app.URL)
+	if codes.Load() != 2 || r.w.State().Phase != PhaseWaiting {
+		t.Fatalf("a new pair must fetch a new code: codes %d, %+v", codes.Load(), r.w.State())
+	}
+	r.w.Cancel()
 }
