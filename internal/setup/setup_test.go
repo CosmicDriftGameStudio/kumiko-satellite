@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -100,7 +102,15 @@ func TestPairingThenFolderStep(t *testing.T) {
 	if st := r.w.State(); st.Phase != PhaseFolder || st.FolderErr == "" {
 		t.Fatalf("root folder: %+v", st)
 	}
-	dir := t.TempDir()
+	// Not t.TempDir(): on Windows it lies in AppData, which the folder check refuses on purpose.
+	dir, err := filepath.Abs(filepath.Join(".", "folder-"+t.Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
 	if !r.w.SubmitFolder(dir, false) || <-r.folder != dir || r.w.State().Phase != PhaseIdle {
 		t.Fatalf("valid folder: %+v", r.w.State())
 	}

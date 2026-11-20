@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,7 +27,7 @@ func TestEnablePlanWritesLaunchAgentAndDesktopEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(mac.File, "/Users/a/Library/LaunchAgents/de.kumiko.satellite.plist") ||
+	if mac.File != filepath.Join("/Users/a", "Library", "LaunchAgents", "de.kumiko.satellite.plist") ||
 		!strings.Contains(mac.Content, "<string>/Applications/A&amp;B/kumiko-satellite</string>") ||
 		!strings.Contains(mac.Content, "<key>RunAtLoad</key><true/>") || mac.Cmd != nil {
 		t.Fatalf("plan %+v", mac)
@@ -35,7 +36,7 @@ func TestEnablePlanWritesLaunchAgentAndDesktopEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(lin.File, "/home/a/.config/autostart/kumiko-satellite.desktop") ||
+	if lin.File != filepath.Join("/home/a", ".config", "autostart", "kumiko-satellite.desktop") ||
 		!strings.Contains(lin.Content, `Exec="/opt/my sat/kumiko-satellite"`) {
 		t.Fatalf("plan %+v", lin)
 	}
