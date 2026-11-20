@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/CosmicDriftGameStudio/kumiko-satellite/compare/v0.1.0...v0.2.0) (2026-11-20)
+
+
+### Features
+
+* signed and notarized macOS app ([#6](https://github.com/CosmicDriftGameStudio/kumiko-satellite/issues/6)) ([66082e3](https://github.com/CosmicDriftGameStudio/kumiko-satellite/commit/66082e3ad854bcdf4c1d689677023f78b2c8d45e))
+
 ## 0.1.0 (2026-11-20)
 
 
