@@ -21,10 +21,14 @@ import (
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/syncer"
 )
 
-type fakeSettings struct{ autostart bool }
+type fakeSettings struct {
+	autostart bool
+	name      string
+}
 
 func (f *fakeSettings) AppURL() string             { return "https://app.example.com" }
 func (f *fakeSettings) Folder() string             { return "/data" }
+func (f *fakeSettings) DeviceName() string         { return f.name }
 func (f *fakeSettings) SetFolder(string) error     { return nil }
 func (f *fakeSettings) Autostart() bool            { return f.autostart }
 func (f *fakeSettings) SetAutostart(on bool) error { f.autostart = on; return nil }
@@ -426,6 +430,19 @@ func TestSetupPagesFollowTheDesign(t *testing.T) {
 	}
 	if strings.Contains(second, "Which folder should be uploaded?") || strings.Contains(second, "Step 2 of 2") {
 		t.Error("step 2 keeps the old wording")
+	}
+}
+
+func TestStatusSubtitleNamesTheDevice(t *testing.T) {
+	r := newRig(t)
+	r.src = &fakeSource{snap: &syncer.Snapshot{State: syncer.StateIdle}}
+	r.settings.name = "Büro-PC"
+	if body := r.get(t, "/"); !strings.Contains(body, "Paired as Büro-PC with app.example.com · /data") {
+		t.Errorf("subtitle misses the device name: %s", body)
+	}
+	r.settings.name = ""
+	if body := r.get(t, "/"); !strings.Contains(body, "Paired with app.example.com · /data") || strings.Contains(body, "Paired as") {
+		t.Error("subtitle without a name must stay as before")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,8 +86,10 @@ func (h *harness) cycle() {
 func TestFileNeedsTwoScansAndIsUploadedOnce(t *testing.T) {
 	h := newHarness(t)
 	h.write("a.txt", "hello")
-	h.write(".hidden", "x")
 	h.write("Thumbs.db", "x")
+	if runtime.GOOS != "windows" { // there hidden is a file attribute, see the filter tests
+		h.write(".hidden", "x")
+	}
 	_ = h.e.Scan()
 	h.e.Process(context.Background())
 	if h.files.Load() != 0 {

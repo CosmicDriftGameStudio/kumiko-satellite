@@ -12,8 +12,9 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
   `os.UserConfigDir()/kumiko-satellite/config.json` with mode `0600`. The app keeps only its hash.
   An admin of the tenant can revoke the connector at any time; the satellite then shows
   "Device revoked, pair again" and stops uploading.
-- Only the Go standard library, no third-party modules, so the code can be audited in an
-  afternoon. Everything lives in `internal/` with one small package per topic.
+- The Go standard library plus two pinned modules that only draw the window (see
+  [Dependencies](#dependencies)), so the code can be audited in an afternoon. Everything lives in
+  `internal/` with one small package per topic.
 - Folder guard: a drive or share root (`C:\`, `D:\`, `\\server\share`, `/`), Windows system folders
   (`Windows`, `Program Files`, `Program Files (x86)`, `ProgramData`, `AppData`), the user profile
   itself and Unix system folders (`/etc`, `/usr`, `/bin`, `/System`, ...) are rejected. Pick a
@@ -40,15 +41,38 @@ protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
 
 ## Install and set up
 
-Download the binary for your platform from the GitHub releases and double-click it. A window
-opens (Windows and macOS; on Linux the default browser opens instead):
+Download the program for your computer from the
+[latest release](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest):
+
+| Computer | File |
+|---|---|
+| Windows 10/11 (most PCs) | [`kumiko-satellite-windows-amd64.exe`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-windows-amd64.exe) |
+| Windows on ARM | [`kumiko-satellite-windows-arm64.exe`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-windows-arm64.exe) |
+| Mac with Apple chip (M1 and later) | [`kumiko-satellite-darwin-arm64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-arm64) |
+| Mac with Intel chip | [`kumiko-satellite-darwin-amd64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-amd64) |
+| Linux | [`kumiko-satellite-linux-amd64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-linux-amd64), [`-linux-arm64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-linux-arm64) |
+
+Put it in a place of its own (for example `C:\Tools`) and double-click it. The binaries are not
+signed yet: Windows SmartScreen asks once ("More info", "Run anyway"). On a Mac or Linux the
+download loses its execute bit, so run `chmod +x kumiko-satellite-*` first; a Mac then blocks the
+first start, allow it under System Settings, Privacy & Security, "Open Anyway". A window opens
+(Windows and macOS; on Linux the default browser opens instead):
 
 1. **Connect:** enter the app address and press "Pair". A code appears; an admin of your company
    confirms it in the app ("Confirm in the app" opens the pairing screen).
+
+   <img src="docs/images/pair.png" alt="Pairing step with the code K7QM-4XWP waiting for confirmation" width="480">
+
 2. **Choose folder:** pick the folder with "Browse…" (native folder dialog; on Linux needs
    `zenity`, otherwise type the path) and keep "Start automatically when I sign in" ticked.
 
-Then the window shows the status. Closing the window does not stop the sync; double-click the
+   <img src="docs/images/folder.png" alt="Folder step with D:\Scans and autostart ticked" width="480">
+
+Then the window shows the status, with the name the device was given in the app:
+
+<img src="docs/images/status.png" alt="Status window: up to date, 128 of 128 files delivered" width="480">
+
+Closing the window does not stop the sync; double-click the
 program again to get the window back. "Settings" on the status page changes the folder and the
 autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder.
 
@@ -80,7 +104,8 @@ The folder is scanned every 30 seconds. A file is uploaded once its size and mod
 stayed equal over two scans, so half-written files wait ("Checking new files"). Uploads run one
 after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's
 storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
-goes out every 60 seconds. Progress is remembered in `state.json` next to the config file.
+goes out every 60 seconds; if the server answers with the name this device is paired under, the
+status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
 
 ## Dependencies
 
