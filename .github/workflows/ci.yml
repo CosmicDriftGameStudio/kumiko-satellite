@@ -3,7 +3,6 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -57,24 +56,60 @@ jobs:
           name: darwin-${{ matrix.arch }}
           path: dist/*
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, windows, build-macos]
+  # Keeps a release PR (version + CHANGELOG from conventional commits) open on main; merging it
+  # creates the tag and the GitHub release. The PAT is needed because a PR opened with the default
+  # token starts no workflows, so the required checks would never run on it.
+  release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ secrets.GH_PACKAGES_PAT }}
+
+  # The binaries are built again with the release tag as version, so `kumiko-satellite version`
+  # names the release and not the branch.
+  release-assets:
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, test, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: scripts/build-all.sh dist "${GITHUB_REF_NAME}"
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: darwin-*
-          path: dist
-          merge-multiple: true
-      - name: Publish release
+      - run: scripts/build-all.sh dist "${TAG}"
+      - name: Upload windows and linux binaries
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "${GITHUB_REF_NAME}" --generate-notes
+        run: gh release upload "${TAG}" dist/*
+
+  release-assets-macos:
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, test, windows, build-macos]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: scripts/build-macos.sh dist ${{ matrix.arch }} "${TAG}"
+      - name: Upload macOS binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${TAG}" dist/*
