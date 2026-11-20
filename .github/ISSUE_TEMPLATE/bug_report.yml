@@ -1,0 +1,33 @@
+name: Bug report
+description: The satellite doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: >
+        From `kumiko-satellite.log` next to `state.json`. Remove the app address if it is private;
+        the log never contains the device token.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Satellite version
+      placeholder: "e.g. 0.1.0 (kumiko-satellite version)"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Windows 11 23H2, Windows Server 2022, macOS 15"
+    validations:
+      required: true
