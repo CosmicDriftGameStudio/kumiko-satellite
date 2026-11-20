@@ -218,7 +218,7 @@ func (e *Engine) failLocked(rel string, f *failure) {
 
 // Heartbeater is the part of the API client the heartbeat loop needs.
 type Heartbeater interface {
-	Heartbeat(ctx context.Context, version string, sync *api.SyncInfo) (bool, error)
+	Heartbeat(ctx context.Context, version string, sync *api.SyncInfo) (api.HeartbeatReply, error)
 }
 
 // wireState maps to the states the server accepts (idle, syncing, error);
@@ -245,7 +245,7 @@ func (e *Engine) SendHeartbeat(ctx context.Context, hb Heartbeater, version stri
 	if !s.LastSyncAt.IsZero() {
 		info.LastSyncAt = s.LastSyncAt.UTC().Format(time.RFC3339)
 	}
-	retry, err := hb.Heartbeat(ctx, version, info)
+	reply, err := hb.Heartbeat(ctx, version, info)
 	var apiErr *api.Error
 	switch {
 	case errors.As(err, &apiErr) && apiErr.Revoked():
@@ -254,9 +254,22 @@ func (e *Engine) SendHeartbeat(ctx context.Context, hb Heartbeater, version stri
 		e.mu.Lock()
 		e.logLocked("Heartbeat failed: "+err.Error(), true)
 		e.mu.Unlock()
-	case retry:
-		e.Retry()
+	default:
+		e.mu.Lock()
+		e.deviceName = reply.Name
+		e.mu.Unlock()
+		if reply.Retry {
+			e.Retry()
+		}
 	}
+}
+
+// DeviceName is the name the last heartbeat reported; empty until then or
+// when the server does not send one.
+func (e *Engine) DeviceName() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.deviceName
 }
 
 // RunHeartbeat sends a heartbeat immediately and then every interval.

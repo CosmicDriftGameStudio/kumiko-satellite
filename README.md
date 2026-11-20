@@ -80,7 +80,8 @@ The folder is scanned every 30 seconds. A file is uploaded once its size and mod
 stayed equal over two scans, so half-written files wait ("Checking new files"). Uploads run one
 after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's
 storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
-goes out every 60 seconds. Progress is remembered in `state.json` next to the config file.
+goes out every 60 seconds; if the server answers with the name this device is paired under, the
+status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
 
 ## Dependencies
 

@@ -79,6 +79,7 @@ type Engine struct {
 	failed     map[string]*failure
 	attempts   map[string]int
 	blocked    string
+	deviceName string
 	blockedAs  State // StateQuota or StateRevoked while blocked != ""
 	current    string
 	processing bool

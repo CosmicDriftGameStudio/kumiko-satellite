@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -167,9 +168,33 @@ type SyncInfo struct {
 	LastSyncAt string `json:"lastSyncAt,omitempty"`
 }
 
-// Heartbeat reports version and sync state; retry is true when the server asks
-// for failed files to be tried again.
-func (c *Client) Heartbeat(ctx context.Context, version string, sync *SyncInfo) (retry bool, err error) {
+// HeartbeatReply is the server's answer to a heartbeat. Name is the label the
+// device is paired under; older servers omit it.
+type HeartbeatReply struct {
+	// Retry is true when the server asks for failed files to be tried again.
+	Retry bool
+	Name  string
+}
+
+const maxDeviceNameRunes = 120
+
+// cleanDeviceName drops control characters and caps the length: the name is
+// shown in the status window.
+func cleanDeviceName(s string) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
+	if r := []rune(s); len(r) > maxDeviceNameRunes {
+		s = strings.TrimSpace(string(r[:maxDeviceNameRunes]))
+	}
+	return s
+}
+
+// Heartbeat reports version and sync state.
+func (c *Client) Heartbeat(ctx context.Context, version string, sync *SyncInfo) (HeartbeatReply, error) {
 	if version == "" {
 		version = "dev"
 	}
@@ -181,25 +206,26 @@ func (c *Client) Heartbeat(ctx context.Context, version string, sync *SyncInfo) 
 		Sync    *SyncInfo `json:"sync,omitempty"`
 	}{version, sync})
 	if err != nil {
-		return false, err
+		return HeartbeatReply{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/v1/heartbeat", strings.NewReader(string(payload)))
 	if err != nil {
-		return false, err
+		return HeartbeatReply{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return false, err
+		return HeartbeatReply{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false, ErrorFromResponse(resp)
+		return HeartbeatReply{}, ErrorFromResponse(resp)
 	}
 	var out struct {
-		Retry bool `json:"retry"`
+		Retry bool   `json:"retry"`
+		Name  string `json:"name"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
-	return out.Retry, nil
+	return HeartbeatReply{Retry: out.Retry, Name: cleanDeviceName(out.Name)}, nil
 }

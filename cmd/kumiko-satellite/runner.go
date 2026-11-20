@@ -100,7 +100,7 @@ func (r *runner) adopt(cfg config.Config) {
 	r.mu.Unlock()
 }
 
-// AppURL, Folder, SetFolder, Autostart and SetAutostart implement status.Settings.
+// AppURL, Folder, DeviceName, SetFolder, Autostart and SetAutostart implement status.Settings.
 func (r *runner) AppURL() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -111,6 +111,16 @@ func (r *runner) Folder() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.cfg.Folder
+}
+
+func (r *runner) DeviceName() string {
+	r.mu.Lock()
+	engine := r.engine
+	r.mu.Unlock()
+	if engine == nil {
+		return ""
+	}
+	return engine.DeviceName()
 }
 
 func (r *runner) SetFolder(folder string) error {

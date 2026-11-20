@@ -33,6 +33,8 @@ type Source interface {
 type Settings interface {
 	AppURL() string
 	Folder() string
+	// DeviceName is the name the app knows this device by; empty if unknown.
+	DeviceName() string
 	SetFolder(folder string) error
 	Autostart() bool
 	SetAutostart(on bool) error
@@ -452,6 +454,9 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 	}
 	if host := hostOf(s.appURL()); host != "" {
 		v.Subtitle = "Paired with " + host
+		if s.opt.Settings != nil && s.opt.Settings.DeviceName() != "" {
+			v.Subtitle = "Paired as " + s.opt.Settings.DeviceName() + " with " + host
+		}
 		if s.opt.Settings != nil && s.opt.Settings.Folder() != "" {
 			v.Subtitle += " · " + s.opt.Settings.Folder()
 		}
