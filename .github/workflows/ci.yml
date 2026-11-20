@@ -51,10 +51,11 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/build-macos.sh dist ${{ matrix.arch }} "${GITHUB_REF_NAME}"
+      - run: scripts/package-macos.sh dist/kumiko-satellite-darwin-${{ matrix.arch }} "${GITHUB_REF_NAME}" app
       - uses: actions/upload-artifact@v4
         with:
           name: darwin-${{ matrix.arch }}
-          path: dist/*
+          path: app
 
   # Keeps a release PR (version + CHANGELOG from conventional commits) open on main; merging it
   # creates the tag and the GitHub release. The PAT is needed because a PR opened with the default
@@ -109,7 +110,50 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/build-macos.sh dist ${{ matrix.arch }} "${TAG}"
-      - name: Upload macOS binary
+      - run: scripts/package-macos.sh dist/kumiko-satellite-darwin-${{ matrix.arch }} "${TAG}" app
+      # Same signing as ncrs: Developer ID with hardened runtime, notarized and stapled, so
+      # Gatekeeper opens the app without a warning. A release never goes out unsigned.
+      - name: Sign, notarize and staple
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE_P12:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+            echo "::error::Apple secrets are missing; refusing to publish an unsigned macOS app"
+            exit 1
+          fi
+          KEYCHAIN=build.keychain-db
+          PASS=$(uuidgen)
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          trap 'security delete-keychain "$KEYCHAIN"' EXIT
+          # macOS base64 decodes with -D; whitespace from pasting the secret would break it.
+          P12=$(mktemp -t identity).p12
+          printf '%s' "$APPLE_CERTIFICATE_P12" | tr -d '[:space:]' | base64 -D > "$P12"
+          test -s "$P12" || { echo "::error::APPLE_CERTIFICATE_P12 is not valid base64"; exit 1; }
+          security import "$P12" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$P12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASS" "$KEYCHAIN" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN"
+
+          app="app/Kumiko Satellite.app"
+          codesign --force --sign "$APPLE_TEAM_ID" --options runtime --timestamp "$app"
+          codesign --verify --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait --timeout 20m
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          # ditto keeps the signature's extended attributes, zip does not.
+          ditto -c -k --keepParent "$app" "kumiko-satellite-darwin-${{ matrix.arch }}.app.zip"
+      - name: Upload macOS app
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${TAG}" dist/*
+        run: gh release upload "${TAG}" "kumiko-satellite-darwin-${{ matrix.arch }}.app.zip"

@@ -41,6 +41,11 @@ func EnablePlan(goos, exe, home string) (Plan, error) {
 	case "windows":
 		return Plan{Cmd: []string{"schtasks", "/Create", "/SC", "ONLOGON", "/TN", taskName, "/TR", `"` + exe + `"`, "/F"}}, nil
 	case "darwin":
+		// An app started from Downloads runs from a random read-only copy (App Translocation)
+		// that is gone after the next login, so a LaunchAgent pointing there would never start.
+		if strings.Contains(exe, "/AppTranslocation/") {
+			return Plan{}, errors.New("move Kumiko Satellite to the Applications folder and start it from there to turn on autostart")
+		}
 		var esc bytes.Buffer
 		if err := xml.EscapeText(&esc, []byte(exe)); err != nil {
 			return Plan{}, err

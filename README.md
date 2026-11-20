@@ -48,14 +48,15 @@ Download the program for your computer from the
 |---|---|
 | Windows 10/11 (most PCs) | [`kumiko-satellite-windows-amd64.exe`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-windows-amd64.exe) |
 | Windows on ARM | [`kumiko-satellite-windows-arm64.exe`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-windows-arm64.exe) |
-| Mac with Apple chip (M1 and later) | [`kumiko-satellite-darwin-arm64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-arm64) |
-| Mac with Intel chip | [`kumiko-satellite-darwin-amd64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-amd64) |
+| Mac with Apple chip (M1 and later) | [`kumiko-satellite-darwin-arm64.app.zip`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-arm64.app.zip) |
+| Mac with Intel chip | [`kumiko-satellite-darwin-amd64.app.zip`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-darwin-amd64.app.zip) |
 | Linux | [`kumiko-satellite-linux-amd64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-linux-amd64), [`-linux-arm64`](https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest/download/kumiko-satellite-linux-arm64) |
 
-Put it in a place of its own (for example `C:\Tools`) and double-click it. The binaries are not
-signed yet: Windows SmartScreen asks once ("More info", "Run anyway"). On a Mac or Linux the
-download loses its execute bit, so run `chmod +x kumiko-satellite-*` first; a Mac then blocks the
-first start, allow it under System Settings, Privacy & Security, "Open Anyway". A window opens
+On Windows put it in a place of its own (for example `C:\Tools`) and double-click it. The Windows
+program is not signed yet: SmartScreen asks once ("More info", "Run anyway"). On a Mac move
+"Kumiko Satellite" from the unpacked zip to the Applications folder and open it there; the app is
+signed and notarized by Apple. On Linux the download loses its execute bit, so run
+`chmod +x kumiko-satellite-*` first. A window opens
 (Windows and macOS; on Linux the default browser opens instead):
 
 1. **Connect:** enter the app address and press "Pair". A code appears; an admin of your company
@@ -92,7 +93,8 @@ If WebView2 is missing or the window cannot open, the default browser opens the 
 `pair` prints a verification URL and a code such as `AB12-CD34`; an admin confirms it in the app
 and the token is stored. `--folder` is optional there and can be given to `run`. The Windows exe
 is built for the GUI subsystem and attaches to the parent console, so the commands print in `cmd`
-and PowerShell (the prompt may return before the output ends).
+and PowerShell (the prompt may return before the output ends). On a Mac the program sits in the
+app: `"/Applications/Kumiko Satellite.app/Contents/MacOS/kumiko-satellite" version`.
 
 Build from source (Windows and Linux are pure Go; macOS needs cgo for the window):
 

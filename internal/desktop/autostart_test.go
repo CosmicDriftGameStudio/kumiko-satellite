@@ -47,3 +47,10 @@ func TestEnablePlanWritesLaunchAgentAndDesktopEntry(t *testing.T) {
 		t.Fatal("unsupported OS must fail")
 	}
 }
+
+func TestEnablePlanRefusesTranslocatedMacApp(t *testing.T) {
+	exe := "/private/var/folders/x/T/AppTranslocation/1234/d/Kumiko Satellite.app/Contents/MacOS/kumiko-satellite"
+	if _, err := EnablePlan("darwin", exe, "/Users/a"); err == nil || !strings.Contains(err.Error(), "Applications") {
+		t.Fatalf("err = %v, want a hint to move the app to Applications", err)
+	}
+}
