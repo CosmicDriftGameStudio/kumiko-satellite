@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/CosmicDriftGameStudio/kumiko-satellite/compare/v0.2.0...v0.2.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **status:** show files the app rejected as rejected, not as a sync error ([#8](https://github.com/CosmicDriftGameStudio/kumiko-satellite/issues/8)) ([7102a38](https://github.com/CosmicDriftGameStudio/kumiko-satellite/commit/7102a38bc49d9996a7303bc5a973ab23206c0d30))
+
 ## [0.2.0](https://github.com/CosmicDriftGameStudio/kumiko-satellite/compare/v0.1.0...v0.2.0) (2026-11-20)
 
 
