@@ -20,6 +20,8 @@ const (
 	// StateChecking: files were seen but have not stayed unchanged over two scans yet.
 	StateChecking State = "checking"
 	StateQuota    State = "quota"
+	// StateRejected: every missing file was refused by the app; a new version of the file or a retry helps.
+	StateRejected State = "rejected"
 	StateRevoked  State = "revoked"
 )
 
@@ -41,7 +43,8 @@ type Snapshot struct {
 	State      State
 	Queued     int
 	Checking   int // seen, waiting for the second matching scan
-	Failed     int
+	Failed     int // all missing files, rejected ones included
+	Rejected   int // failed files the app refused for good
 	Done       int
 	Total      int
 	Current    string
@@ -124,11 +127,18 @@ func (e *Engine) Snapshot() Snapshot {
 		State: StateIdle, Queued: len(e.queue), Checking: e.checkingLocked(), Failed: len(e.failed), Done: e.done, Total: e.total,
 		Current: e.current, LastError: e.lastErr, LastSyncAt: e.lastSync,
 	}
+	for _, f := range e.failed {
+		if f.permanent {
+			s.Rejected++
+		}
+	}
 	switch {
 	case e.blocked != "":
 		s.State, s.LastError = e.blockedAs, e.blocked
-	case len(e.failed) > 0:
+	case len(e.failed) > s.Rejected:
 		s.State = StateError
+	case s.Rejected > 0:
+		s.State = StateRejected
 	case e.processing:
 		s.State = StateSyncing
 	case len(e.queue) > 0 || s.Checking > 0 || !e.scanned:

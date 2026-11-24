@@ -63,6 +63,10 @@ func (e *Engine) Scan() error {
 			continue
 		}
 		e.seen[rel] = obs
+		// A replaced file gets a fresh chance without a manual retry.
+		if f := e.failed[rel]; f != nil && f.permanent {
+			delete(e.failed, rel)
+		}
 	}
 	for rel := range e.seen {
 		if _, ok := present[rel]; !ok {

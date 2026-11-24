@@ -9,7 +9,7 @@
     <span class="pill {{.StateClass}}"><span aria-hidden="true">●</span> {{.StateLabel}}</span>
     {{if .ShowProgress}}
     <progress class="{{.StateClass}}" value="{{.Done}}" max="{{.Total}}"></progress>
-    <div>{{.Done}} of {{.Total}} files delivered</div>
+    <div>{{.Done}} of {{.Total}} files delivered{{if .Rejected}}, {{.Rejected}} rejected{{end}}</div>
     {{end}}
     {{if .Hint}}<p class="hint">{{.Hint}}{{if .PairCommand}}<code>{{.PairCommand}}</code>{{end}}</p>{{end}}
     {{if .ShowRepair}}<form method="post" action="/setup/repair">
@@ -24,6 +24,7 @@
       {{end}}
       <dt>Last sync</dt><dd>{{.LastSync}}</dd>
       {{if .ShowCounters}}<dt>Failed</dt><dd>{{.Failed}}</dd>{{end}}
+      {{if and .ShowCounters .Rejected}}<dt>Rejected</dt><dd>{{.Rejected}}</dd>{{end}}
       {{if .LastError}}<dt>Last error</dt><dd class="errtext">{{.LastError}}</dd>{{end}}
     </dl>
     {{if .ShowRetry}}<form method="post" action="/retry">

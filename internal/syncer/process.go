@@ -229,7 +229,7 @@ func wireState(s State) string {
 		return "idle"
 	case StateSyncing, StateChecking:
 		return "syncing"
-	case StateError, StateQuota, StateRevoked:
+	case StateError, StateRejected, StateQuota, StateRevoked:
 		return "error"
 	default:
 		return "error"

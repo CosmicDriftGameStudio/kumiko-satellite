@@ -390,7 +390,7 @@ type eventView struct {
 
 type view struct {
 	Token, Version, StateClass, StateLabel string
-	Queued, Failed, Done, Total            int
+	Queued, Failed, Rejected, Done, Total  int
 	Current, LastError, LastSync           string
 	Events                                 []eventView
 	ShowProgress                           bool
@@ -422,7 +422,7 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 	}
 	snap := src.Snapshot()
 	v := view{
-		Token: s.token, Version: s.opt.Version, Queued: snap.Queued, Failed: snap.Failed,
+		Token: s.token, Version: s.opt.Version, Queued: snap.Queued, Failed: snap.Failed - snap.Rejected, Rejected: snap.Rejected,
 		Done: snap.Done, Total: snap.Total, Current: snap.Current, LastError: snap.LastError,
 		ShowProgress: snap.Total > 0, LastSync: "never", Checking: snap.Checking,
 		ShowCounters: snap.State != syncer.StateRevoked,
@@ -447,6 +447,9 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 			v.Hint = "This satellite has to be paired with the app again:"
 			v.PairCommand = "kumiko-satellite pair --url " + s.appURL()
 		}
+	case syncer.StateRejected:
+		v.StateClass, v.StateLabel = "warn", "Some files were rejected by the app"
+		v.Hint = "The app refused these files (for example not a readable PDF). Replace or fix them in the folder, then press “Retry”."
 	case syncer.StateError:
 		v.StateClass, v.StateLabel = "bad", "Error"
 	default:
