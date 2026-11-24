@@ -255,11 +255,56 @@ func TestEventLogIsRingBuffer(t *testing.T) {
 }
 
 func TestWireStateIsAcceptedByServer(t *testing.T) {
-	for _, st := range []State{StateIdle, StateSyncing, StateError, StateChecking, StateQuota, StateRevoked} {
+	for _, st := range []State{StateIdle, StateSyncing, StateError, StateRejected, StateChecking, StateQuota, StateRevoked} {
 		switch w := wireState(st); w {
 		case "idle", "syncing", "error":
 		default:
 			t.Errorf("state %q maps to %q, server accepts only idle|syncing|error", st, w)
 		}
+	}
+}
+
+func TestOnlyRejectedFilesShowRejectedState(t *testing.T) {
+	h := newHarness(t)
+	h.write("a.pdf", "1")
+	h.write("b.pdf", "2")
+	h.status.Store(422)
+	h.cycle()
+	s := h.e.Snapshot()
+	if s.State != StateRejected || s.Rejected != 2 || s.Failed != 2 {
+		t.Fatalf("want rejected with 2 rejected/2 failed: %+v", s)
+	}
+	if w := wireState(s.State); w != "error" {
+		t.Fatalf("wire state %q, server must keep seeing error", w)
+	}
+}
+
+func TestRejectedMixedWithTransientFailureStaysError(t *testing.T) {
+	h := newHarness(t)
+	h.write("a.pdf", "1")
+	h.status.Store(422)
+	h.cycle()
+	h.write("b.pdf", "2")
+	h.status.Store(500)
+	h.cycle()
+	if s := h.e.Snapshot(); s.State != StateError || s.Rejected != 1 || s.Failed != 2 {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestReplacedRejectedFileIsUploadedWithoutRetry(t *testing.T) {
+	h := newHarness(t)
+	h.write("a.pdf", "1")
+	h.status.Store(422)
+	h.cycle()
+	before := h.files.Load()
+	h.status.Store(201)
+	h.write("a.pdf", "replaced with more content")
+	h.cycle()
+	if h.files.Load() != before+1 {
+		t.Fatalf("uploads %d, want %d", h.files.Load(), before+1)
+	}
+	if s := h.e.Snapshot(); s.State != StateIdle || s.Failed != 0 {
+		t.Fatalf("%+v", s)
 	}
 }

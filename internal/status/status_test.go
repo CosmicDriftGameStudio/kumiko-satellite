@@ -210,3 +210,17 @@ func TestRevokedHidesProgressAndCounters(t *testing.T) {
 		t.Error("revoked page keeps hint and log")
 	}
 }
+
+func TestRejectedStateIsWarningWithHintAndCounts(t *testing.T) {
+	snap := syncer.Snapshot{State: syncer.StateRejected, Done: 2, Total: 2, Failed: 2, Rejected: 2}
+	h, _ := testHandler(&fakeSource{snap: &snap})
+	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
+	for _, want := range []string{`class="pill warn"`, "Some files were rejected by the app", "Replace or fix them in the folder", "2 of 2 files delivered, 2 rejected", "Retry", "<dt>Rejected</dt>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rejected page misses %q", want)
+		}
+	}
+	if strings.Contains(body, "pill bad") {
+		t.Error("rejected must not be red")
+	}
+}
