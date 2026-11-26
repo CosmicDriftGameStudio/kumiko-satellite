@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -104,7 +105,7 @@ func TestApplySwapsAndCleans(t *testing.T) {
 	if read(t, exe+".old") != "old-binary" {
 		t.Error("previous exe must stay as .old")
 	}
-	if info, _ := os.Stat(exe); info.Mode()&0o111 == 0 {
+	if info, _ := os.Stat(exe); runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
 		t.Error("exe must be executable")
 	}
 	if _, err := os.Stat(exe + ".new"); !os.IsNotExist(err) {
