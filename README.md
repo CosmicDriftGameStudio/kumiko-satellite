@@ -1,43 +1,13 @@
 # kumiko-satellite
 
-A small program for a customer's own machine. It watches one folder and delivers new and changed
-files to a Kumiko app over HTTPS. It is the "satellite" of the connectors feature; the wire
-protocol is described in the Kumiko guide `docs/guides/connectors-satellite.md`.
+Puts files from a folder on your computer into your Kumiko app. Save a scan or a document in the
+folder and it shows up in the app within a minute, where a process can pick it up. Pairing takes
+one code, no VPN and no inbound connections, and an admin can switch the device off from the app
+at any time.
 
-## Security model
-
-- Outgoing HTTPS only. The program opens no port except the local page bound to `127.0.0.1`.
-  Plain `http://` app URLs are refused unless the host is `localhost` or a loopback address.
-- The device token (`ksat_...`) is stored only on this machine, in
-  `os.UserConfigDir()/kumiko-satellite/config.json` with mode `0600`. The app keeps only its hash.
-  An admin of the tenant can revoke the connector at any time; the satellite then shows
-  "Device revoked, pair again" and stops uploading.
-- The Go standard library plus two pinned modules that only draw the window (see
-  [Dependencies](#dependencies)), so the code can be audited in an afternoon. Everything lives in
-  `internal/` with one small package per topic.
-- Folder guard: a drive or share root (`C:\`, `D:\`, `\\server\share`, `/`), Windows system folders
-  (`Windows`, `Program Files`, `Program Files (x86)`, `ProgramData`, `AppData`), the user profile
-  itself and Unix system folders (`/etc`, `/usr`, `/bin`, `/System`, ...) are rejected. Pick a
-  dedicated folder. Symlinks are resolved for this check and never followed while scanning.
-- Hidden and system files, recycle bin, `Thumbs.db`, `desktop.ini`, `.DS_Store`, `pagefile.sys`,
-  `hiberfil.sys`, `swapfile.sys` and `~$` lock files are skipped, the same list the server enforces.
-- Only the user who started the satellite can use the local page, also on a shared server (RDP):
-  each start writes a random secret (and its PID as a hint) to `session` in the user's config dir
-  (mode `0600`), and deletes the file on a clean exit. The secret is never sent: `open` and a
-  second start first make the server prove it knows the secret (HMAC over a random challenge), so
-  a program squatting on the recorded port gets nothing and `open` stops with "Another program is
-  using the satellite's port"; then they answer a one-time challenge the same way to ask for a
-  login nonce or for the window. The nonce is single-use, valid 60 s. A browser start opens a
-  `login-*.html` file (mode `0600`, in the config dir) that posts the nonce to `/login`, so the
-  nonce is in no command line; the file goes away with the login or after 60 s. The page answers
-  401 without the random session cookie `ksat_session_<port>` that the login sets. If the default
-  port is taken (for example by another user's instance) a free port is used and recorded in the
-  same file. What remains: browsers share cookies between ports, so if the owner's browser is
-  sent to a foreign program's port, that program can read the cookie; the satellite itself never
-  opens a port other than its own.
-- The local page checks the `Host` header (against DNS rebinding) and protects every button
-  with a random token plus an `Origin` check. Folder dialog and `schtasks` run with fixed
-  arguments only; the `ksat_` token is never shown on the page.
+The program is small, open source and built on the Go standard library, so your IT can read it in
+an afternoon (see [Security model](#security-model)). Developers find the wire protocol in the
+Kumiko guide [Connectors: a satellite delivers files into the app](https://docs.kumiko.rocks/en/guides/connectors-satellite/).
 
 ## Install and set up
 
@@ -75,7 +45,7 @@ Then the window shows the status, with the name the device was given in the app:
 
 Closing the window does not stop the sync; double-click the
 program again to get the window back. "Settings" on the status page changes the folder and the
-autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder. "Quit satellite" on the status page stops it, for example before replacing the program with a new version: put the new file in the same place under the same name and start it; pairing and folder are kept.
+autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder.
 
 Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), macOS a LaunchAgent in
 `~/Library/LaunchAgents`, Linux an entry in `~/.config/autostart`. The log is written next to
@@ -84,7 +54,83 @@ Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), mac
 If WebView2 is missing or the window cannot open, the default browser opens the same page.
 `kumiko-satellite open` opens it again from a terminal.
 
-### For admins: command line
+## Updates
+
+The satellite checks the GitHub releases at start and every 6 hours. When a newer version exists,
+the status page shows "Version X is available". "Update now" downloads the file for your platform
+from the release, checks its SHA-256 against the checksum GitHub publishes for it, replaces the
+program and restarts it. If the download or the check fails, the old version keeps running and the
+page shows the error. "Update now" exists only in window mode on Windows and Linux. On macOS and
+with `run` (headless, e.g. as a service) the page links to the release page instead; install the
+new version by hand. The Windows program is not signed yet, so the operating system may warn about
+the new file.
+
+By hand: press "Quit satellite" on the status page (closing the window is not enough, the sync
+keeps running), put the new file in the same place under the same name and start it. Pairing and
+folder are kept, no new code is needed. Versions before 0.3.0 have no "Quit satellite": end
+`kumiko-satellite` in Task Manager (Windows) or Activity Monitor (Mac) instead. If the old one is
+still running, starting the new file only brings up the old window.
+
+Your own code-signing certificate: sign the Windows exe with your usual tool (for example
+`signtool sign`) or build from source. Update such a copy by hand, because "Update now" installs
+the file from the release.
+
+## Several computers and folders
+
+- **One folder, one satellite.** Satellites do not coordinate with each other. If two computers
+  watch the same folder, every file is delivered twice.
+- **One satellite, many topics.** The satellite also syncs every subfolder, including ones created
+  later. Point it at a parent folder (for example `D:\Kumiko`) and add a subfolder per topic
+  (`Quotes`, `Contracts`, ...); each shows up as its own folder under Files in the app, and a
+  process in the app can be limited to one of them.
+- **Several computers, one app.** Each computer is paired with its own code, gets its own name and
+  its own folder tree in the app, and can be revoked on its own.
+
+## How it runs
+
+The folder is scanned every 30 seconds. A file is uploaded once its size and modification time
+stayed equal over two scans, so half-written files wait ("Checking new files"). Uploads run one
+after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's
+storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
+goes out every 60 seconds; if the server answers with the name this device is paired under, the
+status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
+
+## Security model
+
+- Outgoing HTTPS only. The program opens no port except the local page bound to `127.0.0.1`.
+  Plain `http://` app URLs are refused unless the host is `localhost` or a loopback address.
+- The device token (`ksat_...`) is stored only on this machine, in
+  `os.UserConfigDir()/kumiko-satellite/config.json` with mode `0600`. The app keeps only its hash.
+  An admin of the tenant can revoke the connector at any time; the satellite then shows
+  "Device revoked, pair again" and stops uploading.
+- The Go standard library plus two pinned modules that only draw the window (see
+  [Dependencies](#dependencies)), so the code can be audited in an afternoon. Everything lives in
+  `internal/` with one small package per topic.
+- Folder guard: a drive or share root (`C:\`, `D:\`, `\\server\share`, `/`), Windows system folders
+  (`Windows`, `Program Files`, `Program Files (x86)`, `ProgramData`, `AppData`), the user profile
+  itself and Unix system folders (`/etc`, `/usr`, `/bin`, `/System`, ...) are rejected. Pick a
+  dedicated folder. Symlinks are resolved for this check and never followed while scanning.
+- Hidden and system files, recycle bin, `Thumbs.db`, `desktop.ini`, `.DS_Store`, `pagefile.sys`,
+  `hiberfil.sys`, `swapfile.sys` and `~$` lock files are skipped, the same list the server enforces.
+- Only the user who started the satellite can use the local page, also on a shared server (RDP):
+  each start writes a random secret (and its PID as a hint) to `session` in the user's config dir
+  (mode `0600`), and deletes the file on a clean exit. The secret is never sent: `open` and a
+  second start first make the server prove it knows the secret (HMAC over a random challenge), so
+  a program squatting on the recorded port gets nothing and `open` stops with "Another program is
+  using the satellite's port"; then they answer a one-time challenge the same way to ask for a
+  login nonce or for the window. The nonce is single-use, valid 60 s. A browser start opens a
+  `login-*.html` file (mode `0600`, in the config dir) that posts the nonce to `/login`, so the
+  nonce is in no command line; the file goes away with the login or after 60 s. The page answers
+  401 without the random session cookie `ksat_session_<port>` that the login sets. If the default
+  port is taken (for example by another user's instance) a free port is used and recorded in the
+  same file. What remains: browsers share cookies between ports, so if the owner's browser is
+  sent to a foreign program's port, that program can read the cookie; the satellite itself never
+  opens a port other than its own.
+- The local page checks the `Host` header (against DNS rebinding) and protects every button
+  with a random token plus an `Origin` check. Folder dialog and `schtasks` run with fixed
+  arguments only; the `ksat_` token is never shown on the page.
+
+## For admins: command line
 
     kumiko-satellite pair --url https://app.example.com --folder "D:\Belege"
     kumiko-satellite run --folder "D:\Belege" --status-addr 127.0.0.1:8765
@@ -99,25 +145,6 @@ app: `"/Applications/Kumiko Satellite.app/Contents/MacOS/kumiko-satellite" versi
 Build from source (Windows and Linux are pure Go; macOS needs cgo for the window):
 
     go build -ldflags "-X main.version=1.0.0" -o kumiko-satellite ./cmd/kumiko-satellite
-
-## How it runs
-
-The folder is scanned every 30 seconds. A file is uploaded once its size and modification time
-stayed equal over two scans, so half-written files wait ("Checking new files"). Uploads run one
-after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respected). If the app's
-storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
-goes out every 60 seconds; if the server answers with the name this device is paired under, the
-status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
-
-## Updates
-
-The satellite checks the GitHub releases at start and every 6 hours. When a newer version exists,
-the status page shows "Version X is available". "Update now" downloads the file for your platform
-from the release, checks its SHA-256 against the checksum GitHub publishes for it, replaces the
-program and restarts it. If the download or the check fails, the old version keeps running and the
-page shows the error. "Update now" exists only in window mode on Windows and Linux. On macOS and
-with `run` (headless, e.g. as a service) the page links to the release page instead; install the
-new version by hand. The program is not signed yet, so the operating system may warn about the new file.
 
 ## Dependencies
 
