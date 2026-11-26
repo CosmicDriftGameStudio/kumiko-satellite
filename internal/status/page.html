@@ -42,6 +42,7 @@
         {{else}}<p class="sub">No events yet.</p>{{end}}</div>
       </details>
       {{if .ShowSettings}}<a href="/settings">Settings</a>{{end}}
+      {{if .ShowQuit}}<a href="/quit">Quit satellite</a>{{end}}
     </div>
   </section>
   <footer class="ver">Version {{.Version}}<noscript> &middot; <a href="/">Refresh</a></noscript></footer>

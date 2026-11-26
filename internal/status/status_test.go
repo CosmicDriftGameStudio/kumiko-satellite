@@ -224,3 +224,58 @@ func TestRejectedStateIsWarningWithHintAndCounts(t *testing.T) {
 		t.Error("rejected must not be red")
 	}
 }
+
+func TestQuitNeedsSessionAndRunsCallbackOnce(t *testing.T) {
+	calls := 0
+	h, err := newTestHandler(Options{
+		Version: "1.0", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} },
+		Quit: func() { calls++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := "127.0.0.1:8765"
+	origin := map[string]string{"Origin": "http://" + host}
+
+	anon := map[string]string{"Origin": "http://" + host, noCookie: "1"}
+	if c := do(t, h, "POST", host, "/quit", anon, url.Values{"token": {"x"}}).Code; c != 401 {
+		t.Errorf("POST without session: %d", c)
+	}
+	if c := do(t, h, "GET", host, "/quit", map[string]string{noCookie: "1"}, nil).Code; c != 401 {
+		t.Errorf("GET without session: %d", c)
+	}
+	if calls != 0 {
+		t.Fatal("rejected requests must not quit")
+	}
+
+	confirm := do(t, h, "GET", host, "/quit", nil, nil)
+	if confirm.Code != 200 || !strings.Contains(confirm.Body.String(), "Sync stops until the satellite is started again") {
+		t.Fatalf("confirm page: %d", confirm.Code)
+	}
+	body := confirm.Body.String()
+	i := strings.Index(body, `name="token" value="`) + len(`name="token" value="`)
+	form := url.Values{"token": {body[i : i+strings.Index(body[i:], `"`)]}}
+
+	if c := do(t, h, "POST", host, "/quit", origin, url.Values{"token": {"wrong"}}).Code; c != 403 || calls != 0 {
+		t.Errorf("wrong token: code %d calls %d", c, calls)
+	}
+	res := do(t, h, "POST", host, "/quit", origin, form)
+	if res.Code != 200 || !strings.Contains(res.Body.String(), "Satellite stopped. You can close this window.") || calls != 1 {
+		t.Errorf("valid POST: code %d calls %d", res.Code, calls)
+	}
+	do(t, h, "POST", host, "/quit", origin, form)
+	if calls != 1 {
+		t.Errorf("callback ran %d times, want once", calls)
+	}
+}
+
+func TestQuitLinkOnlyWithCallback(t *testing.T) {
+	h, _ := testHandler(&fakeSource{})
+	if body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String(); strings.Contains(body, "Quit satellite") {
+		t.Error("no Quit callback, no button")
+	}
+	h, _ = newTestHandler(Options{Version: "1", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} }, Quit: func() {}})
+	if body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String(); !strings.Contains(body, `href="/quit"`) {
+		t.Error("Quit callback shows the button")
+	}
+}

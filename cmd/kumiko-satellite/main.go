@@ -124,7 +124,9 @@ func pair(ctx context.Context, args []string) error {
 	return nil
 }
 
-func run(ctx context.Context, args []string) error {
+func run(parent context.Context, args []string) error {
+	ctx, quit := context.WithCancel(parent)
+	defer quit()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	folder := fs.String("folder", "", "folder to watch (default: from config)")
 	addr := fs.String("status-addr", "127.0.0.1:8765", "loopback address of the status page")
@@ -176,7 +178,7 @@ func run(ctx context.Context, args []string) error {
 	defer session.Remove(sessionPath)
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: func() status.Source { return engine }, AppURL: func() string { return cfg.URL },
-		Secret: info.Secret, Port: info.Port, LoginDir: filepath.Dir(sessionPath),
+		Secret: info.Secret, Port: info.Port, LoginDir: filepath.Dir(sessionPath), Quit: quit,
 	})
 	if err != nil {
 		return err

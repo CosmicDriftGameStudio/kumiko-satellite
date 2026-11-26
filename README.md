@@ -75,7 +75,7 @@ Then the window shows the status, with the name the device was given in the app:
 
 Closing the window does not stop the sync; double-click the
 program again to get the window back. "Settings" on the status page changes the folder and the
-autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder.
+autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder. "Quit satellite" on the status page stops it, for example before replacing the program with a new version: put the new file in the same place under the same name and start it; pairing and folder are kept.
 
 Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), macOS a LaunchAgent in
 `~/Library/LaunchAgents`, Linux an entry in `~/.config/autostart`. The log is written next to
