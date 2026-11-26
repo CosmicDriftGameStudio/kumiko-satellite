@@ -6,11 +6,11 @@
 
   <section class="card">
     <div data-live="status">
-    {{if .UpdateVersion}}<p class="hint">Version {{.UpdateVersion}} is available.{{if not .UpdateCanStart}}{{if .UpdateLink}} <a href="{{.UpdateLink}}" target="_blank" rel="noopener">Open the release page</a>{{end}}{{end}}</p>
+    {{if .UpdateVersion}}<div class="update"><p class="hint">Version {{.UpdateVersion}} is available.{{if not .UpdateCanStart}}{{if .UpdateLink}} <a href="{{.UpdateLink}}" target="_blank" rel="noopener">Open the release page</a>{{end}}{{end}}</p>
     {{if .UpdateCanStart}}<form method="post" action="/update">
       <input type="hidden" name="token" value="{{.Token}}">
       <button type="submit">Update now</button>
-    </form>{{end}}{{end}}
+    </form>{{end}}</div>{{end}}
     {{if .UpdateErr}}<p class="hint errtext">{{.UpdateErr}}</p>{{end}}
     <span class="pill {{.StateClass}}"><span aria-hidden="true">●</span> {{.StateLabel}}</span>
     {{if .ShowProgress}}
