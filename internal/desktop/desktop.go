@@ -34,19 +34,22 @@ func dialogAvailableNative() bool {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return true
 	}
-	_, err := exec.LookPath("zenity")
-	return err == nil
+	return linuxTool("zenity") != ""
 }
 
 func pickFolderNative(ctx context.Context) (string, error) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command", windowsPickScript)
+		cmd = exec.CommandContext(ctx, powershellPath(), "-NoProfile", "-STA", "-Command", windowsPickScript)
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "osascript", "-e", "POSIX path of (choose folder)")
+		cmd = exec.CommandContext(ctx, "/usr/bin/osascript", "-e", "POSIX path of (choose folder)")
 	default:
-		cmd = exec.CommandContext(ctx, "zenity", "--file-selection", "--directory")
+		zenity := linuxTool("zenity")
+		if zenity == "" {
+			return "", ErrNoDialog
+		}
+		cmd = exec.CommandContext(ctx, zenity, "--file-selection", "--directory")
 	}
 	hideWindow(cmd)
 	out, err := cmd.Output()
@@ -71,11 +74,15 @@ func openBrowserNative(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command(rundll32Path(), "url.dll,FileProtocolHandler", url)
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("/usr/bin/open", url)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		opener := linuxTool("xdg-open")
+		if opener == "" {
+			return errors.New("xdg-open not found")
+		}
+		cmd = exec.Command(opener, url)
 	}
 	hideWindow(cmd)
 	if err := cmd.Start(); err != nil {

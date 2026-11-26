@@ -1,6 +1,6 @@
 {{define "live"}}<script nonce="{{.}}">
 (function () {
-  var every = (parseInt(document.body.getAttribute("data-refresh"), 10) || 5) * 1000;
+  var every = (Number.parseInt(document.body.getAttribute("data-refresh"), 10) || 5) * 1000;
   function sync() {
     fetch(location.pathname, { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.text() : null; })

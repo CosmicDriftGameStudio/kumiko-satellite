@@ -71,7 +71,7 @@ func postJSON(ctx context.Context, addr, path string, body any) (*http.Response,
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+path, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+path, bytes.NewReader(raw)) // NOSONAR loopback-only status server, address is enforced by status.ValidateAddr
 	if err != nil {
 		return nil, err
 	}

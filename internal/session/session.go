@@ -78,5 +78,5 @@ func (in Info) Addr() string { return fmt.Sprintf("127.0.0.1:%d", in.Port) }
 // LoginURL is the link that sets the session cookie and redirects to the page;
 // nonce is a single-use value, never the secret.
 func (in Info) LoginURL(nonce string) string {
-	return "http://" + in.Addr() + "/login?k=" + url.QueryEscape(nonce)
+	return "http://" + in.Addr() + "/login?k=" + url.QueryEscape(nonce) // NOSONAR Info.Addr is always 127.0.0.1
 }

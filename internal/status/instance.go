@@ -13,7 +13,7 @@ const instanceHeader = "X-Kumiko-Satellite"
 func IsSatellite(addr string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/", nil) // NOSONAR loopback-only status server, address is enforced by status.ValidateAddr
 	if err != nil {
 		return false
 	}
