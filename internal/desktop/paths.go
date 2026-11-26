@@ -24,7 +24,7 @@ func powershellPath() string {
 	return windowsSystemPath("WindowsPowerShell", "v1.0", "powershell.exe")
 }
 
-var linuxToolDirs = []string{"/usr/bin", "/usr/local/bin", "/bin"}
+var linuxToolDirs = []string{"/usr/bin", "/usr/local/bin", "/bin", "/run/current-system/sw/bin"} // last: NixOS
 
 // linuxTool returns the first existing executable of name in the fixed system
 // folders, or "" when there is none.

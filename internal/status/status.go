@@ -51,7 +51,7 @@ type Options struct {
 	AppURL   func() string
 	// ShowWindow reopens the local window; a second start of the program asks for it.
 	ShowWindow func()
-	// Quit stops the whole program the way SIGTERM does and must return quickly.
+	// Quit stops the whole program the way SIGTERM does , must return quickly and be idempotent (double clicks).
 	// Nil hides the quit button and route.
 	Quit func()
 	// Secret is the per-user secret from the session file. It only keys the
@@ -103,8 +103,6 @@ type server struct {
 	token string
 
 	challenges *Nonces
-
-	quitOnce sync.Once
 
 	sessMu   sync.Mutex
 	sessions []string // random IDs of logged-in browsers; memory only
@@ -376,13 +374,13 @@ func (s *server) quitConfirm(w http.ResponseWriter, r *http.Request) {
 	}{s.token, s.opt.Version, 0})
 }
 
-// quit answers first, then asks the program to stop; Once guards double clicks.
+// quit answers first, then asks the program to stop.
 func (s *server) quit(w http.ResponseWriter, r *http.Request) {
 	render(w, stoppedPage, struct{ Refresh int }{0})
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
-	s.quitOnce.Do(s.opt.Quit)
+	s.opt.Quit()
 }
 
 func (s *server) source() Source {

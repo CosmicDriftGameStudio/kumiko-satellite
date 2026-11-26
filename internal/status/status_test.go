@@ -225,7 +225,7 @@ func TestRejectedStateIsWarningWithHintAndCounts(t *testing.T) {
 	}
 }
 
-func TestQuitNeedsSessionAndRunsCallbackOnce(t *testing.T) {
+func TestQuitNeedsSessionAndRunsCallback(t *testing.T) {
 	calls := 0
 	h, err := newTestHandler(Options{
 		Version: "1.0", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} },
@@ -262,10 +262,6 @@ func TestQuitNeedsSessionAndRunsCallbackOnce(t *testing.T) {
 	res := do(t, h, "POST", host, "/quit", origin, form)
 	if res.Code != 200 || !strings.Contains(res.Body.String(), "Satellite stopped. You can close this window.") || calls != 1 {
 		t.Errorf("valid POST: code %d calls %d", res.Code, calls)
-	}
-	do(t, h, "POST", host, "/quit", origin, form)
-	if calls != 1 {
-		t.Errorf("callback ran %d times, want once", calls)
 	}
 }
 
