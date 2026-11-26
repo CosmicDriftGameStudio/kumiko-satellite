@@ -181,7 +181,7 @@ func run(parent context.Context, args []string) error {
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: func() status.Source { return engine }, AppURL: func() string { return cfg.URL },
 		Secret: info.Secret, Port: info.Port, LoginDir: filepath.Dir(sessionPath), Quit: quit,
-		Update: startUpdates(ctx, quit),
+		Update: startUpdates(ctx, quit, false),
 	})
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
@@ -11,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/session"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/status"
 	"github.com/CosmicDriftGameStudio/kumiko-satellite/internal/update"
 )
@@ -19,13 +19,10 @@ import (
 const (
 	updateEvery     = 6 * time.Hour
 	releasesPageURL = "https://github.com/CosmicDriftGameStudio/kumiko-satellite/releases/latest"
-	// restartedEnv tells the new instance that its predecessor is still shutting down.
-	restartedEnv     = "KUMIKO_SATELLITE_RESTARTED"
-	restartWaitLimit = 10 * time.Second
 )
 
 // pendingRestart holds the freshly installed executable; main starts it after
-// the old status listener is closed, or the new instance would see the old one.
+// realMain returned, when the old status listener and session file are closed.
 var pendingRestart atomic.Pointer[string]
 
 type updater struct {
@@ -33,6 +30,8 @@ type updater struct {
 	version string
 	ctx     context.Context
 	quit    func()
+	exePath func() (string, error)
+	running atomic.Bool
 
 	mu  sync.Mutex
 	rel update.Release
@@ -40,15 +39,16 @@ type updater struct {
 }
 
 // startUpdates cleans up after the previous update and checks for a new
-// release now and every few hours. Errors are only logged.
-func startUpdates(ctx context.Context, quit func()) *status.UpdateOptions {
+// release now and every few hours. Errors are only logged. Only the window
+// mode installs by itself (selfUpdate); headless runs and macOS link to the release page.
+func startUpdates(ctx context.Context, quit func(), selfUpdate bool) *status.UpdateOptions {
 	if exe, err := os.Executable(); err == nil {
 		update.CleanupOld(exe)
 	}
-	u := &updater{version: version, ctx: ctx, quit: quit}
+	u := &updater{version: version, ctx: ctx, quit: quit, exePath: os.Executable}
 	go u.loop()
 	opt := &status.UpdateOptions{Available: u.available, PageURL: releasesPageURL}
-	if runtime.GOOS != "darwin" {
+	if selfUpdate && runtime.GOOS != "darwin" {
 		opt.Start = u.start
 	}
 	return opt
@@ -79,14 +79,19 @@ func (u *updater) available() (string, bool) {
 }
 
 func (u *updater) start() error {
+	if !u.running.CompareAndSwap(false, true) {
+		return errors.New("update already running")
+	}
 	u.mu.Lock()
 	rel, has := u.rel, u.has
 	u.mu.Unlock()
 	if !has {
-		return nil
+		u.running.Store(false)
+		return errors.New("no update available")
 	}
-	exe, err := os.Executable()
+	exe, err := u.exePath()
 	if err != nil {
+		u.running.Store(false)
 		return err
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
@@ -94,6 +99,7 @@ func (u *updater) start() error {
 	}
 	if err := u.checker.Apply(u.ctx, rel, exe); err != nil {
 		log.Printf("update to %s failed: %v", rel.Version, err)
+		u.running.Store(false)
 		return err
 	}
 	log.Printf("updated to %s, restarting", rel.Version)
@@ -108,24 +114,7 @@ func restartIfUpdated() {
 	if exe == nil {
 		return
 	}
-	cmd := exec.Command(*exe, os.Args[1:]...)
-	cmd.Env = append(os.Environ(), restartedEnv+"=1")
-	if err := cmd.Start(); err != nil {
+	if err := exec.Command(*exe, os.Args[1:]...).Start(); err != nil {
 		log.Printf("restart after update failed: %v", err)
-	}
-}
-
-// waitForPredecessor gives the old instance of an update restart time to drop
-// its session file, which it does after closing its listener.
-func waitForPredecessor(sessionPath string) {
-	if os.Getenv(restartedEnv) != "1" {
-		return
-	}
-	deadline := time.Now().Add(restartWaitLimit)
-	for time.Now().Before(deadline) {
-		if _, err := session.Read(sessionPath); err != nil {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
 	}
 }

@@ -115,8 +115,9 @@ The satellite checks the GitHub releases at start and every 6 hours. When a newe
 the status page shows "Version X is available". "Update now" downloads the file for your platform
 from the release, checks its SHA-256 against the checksum GitHub publishes for it, replaces the
 program and restarts it. If the download or the check fails, the old version keeps running and the
-page shows the error. On macOS the page links to the release page instead; install the new app
-by hand. The program is not signed yet, so the operating system may warn about the new file.
+page shows the error. "Update now" exists only in window mode on Windows and Linux. On macOS and
+with `run` (headless, e.g. as a service) the page links to the release page instead; install the
+new version by hand. The program is not signed yet, so the operating system may warn about the new file.
 
 ## Dependencies
 
