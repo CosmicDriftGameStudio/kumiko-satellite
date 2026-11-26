@@ -109,6 +109,15 @@ storage is full, uploads pause until you press "Retry". A heartbeat with version
 goes out every 60 seconds; if the server answers with the name this device is paired under, the
 status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
 
+## Updates
+
+The satellite checks the GitHub releases at start and every 6 hours. When a newer version exists,
+the status page shows "Version X is available". "Update now" downloads the file for your platform
+from the release, checks its SHA-256 against the checksum GitHub publishes for it, replaces the
+program and restarts it. If the download or the check fails, the old version keeps running and the
+page shows the error. On macOS the page links to the release page instead; install the new app
+by hand. The program is not signed yet, so the operating system may warn about the new file.
+
 ## Dependencies
 
 Everything else is the Go standard library. Two small modules draw the window, one per platform:

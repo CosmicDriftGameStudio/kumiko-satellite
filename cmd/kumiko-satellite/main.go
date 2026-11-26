@@ -40,7 +40,9 @@ func main() {
 		done <- code
 		closeWindows()
 	}()
-	os.Exit(serveWindows(done))
+	code := serveWindows(done)
+	restartIfUpdated()
+	os.Exit(code)
 }
 
 func realMain() int {
@@ -179,6 +181,7 @@ func run(parent context.Context, args []string) error {
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: func() status.Source { return engine }, AppURL: func() string { return cfg.URL },
 		Secret: info.Secret, Port: info.Port, LoginDir: filepath.Dir(sessionPath), Quit: quit,
+		Update: startUpdates(ctx, quit),
 	})
 	if err != nil {
 		return err

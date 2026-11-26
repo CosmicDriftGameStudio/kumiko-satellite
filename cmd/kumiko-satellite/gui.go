@@ -58,6 +58,7 @@ func gui(parent context.Context) error {
 	if err != nil {
 		return err
 	}
+	waitForPredecessor(sessionPath)
 	if signalRunning(sessionPath) == nil {
 		return nil // an instance of this user runs and shows its window again
 	}
@@ -112,7 +113,7 @@ func gui(parent context.Context) error {
 	}
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: r.source, Wizard: wiz, Settings: r, AppURL: r.AppURL,
-		ShowWindow: func() { requestWindow(links) }, Quit: quit,
+		ShowWindow: func() { requestWindow(links) }, Quit: quit, Update: startUpdates(ctx, quit),
 		Secret: info.Secret, Port: info.Port, Nonces: nonces, LoginDir: loginDir,
 	})
 	if err != nil {
