@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/CosmicDriftGameStudio/kumiko-satellite/compare/v0.2.1...v0.3.0) (2026-11-26)
+
+
+### Features
+
+* quit and update buttons on the status page, SonarCloud findings ([#10](https://github.com/CosmicDriftGameStudio/kumiko-satellite/issues/10)) ([690ab6a](https://github.com/CosmicDriftGameStudio/kumiko-satellite/commit/690ab6a993571ba116e055328d4edcc20ffe701e))
+
 ## [0.2.1](https://github.com/CosmicDriftGameStudio/kumiko-satellite/compare/v0.2.0...v0.2.1) (2026-11-24)
 
 
