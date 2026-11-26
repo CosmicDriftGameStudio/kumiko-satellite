@@ -1,6 +1,6 @@
 {{define "live"}}<script nonce="{{.}}">
 (function () {
-  var every = (parseInt(document.body.getAttribute("data-refresh"), 10) || 5) * 1000;
+  var every = (Number.parseInt(document.body.getAttribute("data-refresh"), 10) || 5) * 1000;
   function sync() {
     fetch(location.pathname, { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.text() : null; })
@@ -68,6 +68,10 @@
   dt { color:var(--muted-fg); } dd { margin:0; word-break:break-all; }
   .errtext { color:var(--bad-fg); }
   .hint { margin:12px 0 0; }
+  .banner { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; justify-content:space-between; margin:0 0 16px; padding:10px 12px; border-radius:6px; background:var(--active-bg); color:var(--active-fg); font-weight:500; }
+  .banner.bad { background:var(--bad-bg); color:var(--bad-fg); }
+  .banner a { color:inherit; } .banner form { margin:0; }
+  .banner button { margin-top:0; padding:4px 12px; font-size:14px; border-color:var(--active-fg); background:var(--active-fg); color:var(--card); }
   .help { color:var(--muted-fg); font-size:12px; margin:4px 0 0; }
   code { display:block; margin-top:6px; padding:8px 10px; border-radius:6px; background:var(--muted); font-family:var(--font-mono); word-break:break-all; }
   button { margin-top:16px; font:inherit; font-weight:500; padding:7px 14px; border-radius:6px; border:1px solid var(--primary); background:var(--primary); color:var(--primary-fg); cursor:pointer; }

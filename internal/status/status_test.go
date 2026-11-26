@@ -1,6 +1,7 @@
 package status
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -222,5 +223,127 @@ func TestRejectedStateIsWarningWithHintAndCounts(t *testing.T) {
 	}
 	if strings.Contains(body, "pill bad") {
 		t.Error("rejected must not be red")
+	}
+}
+
+func TestQuitNeedsSessionAndRunsCallback(t *testing.T) {
+	calls := 0
+	h, err := newTestHandler(Options{
+		Version: "1.0", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} },
+		Quit: func() { calls++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := "127.0.0.1:8765"
+	origin := map[string]string{"Origin": "http://" + host}
+
+	anon := map[string]string{"Origin": "http://" + host, noCookie: "1"}
+	if c := do(t, h, "POST", host, "/quit", anon, url.Values{"token": {"x"}}).Code; c != 401 {
+		t.Errorf("POST without session: %d", c)
+	}
+	if c := do(t, h, "GET", host, "/quit", map[string]string{noCookie: "1"}, nil).Code; c != 401 {
+		t.Errorf("GET without session: %d", c)
+	}
+	if calls != 0 {
+		t.Fatal("rejected requests must not quit")
+	}
+
+	confirm := do(t, h, "GET", host, "/quit", nil, nil)
+	if confirm.Code != 200 || !strings.Contains(confirm.Body.String(), "Sync stops until the satellite is started again") {
+		t.Fatalf("confirm page: %d", confirm.Code)
+	}
+	body := confirm.Body.String()
+	i := strings.Index(body, `name="token" value="`) + len(`name="token" value="`)
+	form := url.Values{"token": {body[i : i+strings.Index(body[i:], `"`)]}}
+
+	if c := do(t, h, "POST", host, "/quit", origin, url.Values{"token": {"wrong"}}).Code; c != 403 || calls != 0 {
+		t.Errorf("wrong token: code %d calls %d", c, calls)
+	}
+	res := do(t, h, "POST", host, "/quit", origin, form)
+	if res.Code != 200 || !strings.Contains(res.Body.String(), "Satellite stopped. You can close this window.") || calls != 1 {
+		t.Errorf("valid POST: code %d calls %d", res.Code, calls)
+	}
+}
+
+func TestQuitLinkOnlyWithCallback(t *testing.T) {
+	h, _ := testHandler(&fakeSource{})
+	if body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String(); strings.Contains(body, "Quit satellite") {
+		t.Error("no Quit callback, no button")
+	}
+	h, _ = newTestHandler(Options{Version: "1", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} }, Quit: func() {}})
+	if body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String(); !strings.Contains(body, `href="/quit"`) {
+		t.Error("Quit callback shows the button")
+	}
+}
+
+func updateHandler(t *testing.T, u *UpdateOptions) http.Handler {
+	t.Helper()
+	h, err := newTestHandler(Options{
+		Version: "1.0", Secret: testSecret, Port: 8765, Source: func() Source { return &fakeSource{} }, Update: u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestUpdateButtonAndStart(t *testing.T) {
+	starts := 0
+	var startErr error
+	h := updateHandler(t, &UpdateOptions{
+		Available: func() (string, bool) { return "0.3.0", true },
+		Start:     func() error { starts++; return startErr },
+	})
+	host := "127.0.0.1:8765"
+	origin := map[string]string{"Origin": "http://" + host}
+	body := do(t, h, "GET", host, "/", nil, nil).Body.String()
+	if !strings.Contains(body, "Version 0.3.0 is available") || !strings.Contains(body, "Update now") {
+		t.Fatal("update notice with button expected")
+	}
+	i := strings.Index(body, `action="/update"`)
+	body = body[i:]
+	i = strings.Index(body, `name="token" value="`) + len(`name="token" value="`)
+	form := url.Values{"token": {body[i : i+strings.Index(body[i:], `"`)]}}
+
+	anon := map[string]string{"Origin": "http://" + host, noCookie: "1"}
+	if c := do(t, h, "POST", host, "/update", anon, form).Code; c != 401 {
+		t.Errorf("without session: %d", c)
+	}
+	if c := do(t, h, "POST", host, "/update", origin, url.Values{"token": {"wrong"}}).Code; c != 403 {
+		t.Errorf("wrong token: %d", c)
+	}
+	if starts != 0 {
+		t.Fatal("rejected requests must not start the update")
+	}
+	res := do(t, h, "POST", host, "/update", origin, form)
+	if res.Code != 200 || starts != 1 || !strings.Contains(res.Body.String(), "Updating to 0.3.0. The satellite restarts in a few seconds.") {
+		t.Errorf("valid POST: code %d starts %d", res.Code, starts)
+	}
+
+	startErr = errors.New("checksum mismatch")
+	do(t, h, "POST", host, "/update", origin, form)
+	if page := do(t, h, "GET", host, "/", nil, nil).Body.String(); !strings.Contains(page, "Update failed: checksum mismatch") {
+		t.Error("failed update must show its error on the status page")
+	}
+}
+
+func TestNoUpdateNoButton(t *testing.T) {
+	for name, u := range map[string]*UpdateOptions{
+		"nil options": nil,
+		"no update":   {Available: func() (string, bool) { return "", false }, Start: func() error { return nil }},
+	} {
+		h := updateHandler(t, u)
+		if body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String(); strings.Contains(body, "Update now") || strings.Contains(body, "is available") {
+			t.Errorf("%s: no button expected", name)
+		}
+	}
+	h := updateHandler(t, &UpdateOptions{Available: func() (string, bool) { return "0.3.0", true }, PageURL: "https://example.test/rel"})
+	body := do(t, h, "GET", "127.0.0.1:8765", "/", nil, nil).Body.String()
+	if strings.Contains(body, "Update now") || !strings.Contains(body, `href="https://example.test/rel"`) {
+		t.Error("without Start only the release link shows")
+	}
+	if c := do(t, h, "POST", "127.0.0.1:8765", "/update", map[string]string{"Origin": "http://127.0.0.1:8765"}, url.Values{}).Code; c != 404 && c != 405 {
+		t.Errorf("no update route without Start: %d", c)
 	}
 }

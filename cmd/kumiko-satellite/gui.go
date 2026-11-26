@@ -50,7 +50,10 @@ func shutdown(srv *http.Server) {
 	}
 }
 
-func gui(ctx context.Context) error {
+func gui(parent context.Context) error {
+	// The quit button cancels like SIGTERM does: the deferred stops below run, exit code 0.
+	ctx, quit := context.WithCancel(parent)
+	defer quit()
 	sessionPath, err := session.Path()
 	if err != nil {
 		return err
@@ -109,8 +112,8 @@ func gui(ctx context.Context) error {
 	}
 	handler, err := status.NewHandler(status.Options{
 		Version: version, Source: r.source, Wizard: wiz, Settings: r, AppURL: r.AppURL,
-		ShowWindow: func() { requestWindow(links) },
-		Secret:     info.Secret, Port: info.Port, Nonces: nonces, LoginDir: loginDir,
+		ShowWindow: func() { requestWindow(links) }, Quit: quit, Update: startUpdates(ctx, quit, true),
+		Secret: info.Secret, Port: info.Port, Nonces: nonces, LoginDir: loginDir,
 	})
 	if err != nil {
 		return err

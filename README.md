@@ -75,7 +75,7 @@ Then the window shows the status, with the name the device was given in the app:
 
 Closing the window does not stop the sync; double-click the
 program again to get the window back. "Settings" on the status page changes the folder and the
-autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder.
+autostart. After a revocation, "Pair again" runs step 1 again and keeps the folder. "Quit satellite" on the status page stops it, for example before replacing the program with a new version: put the new file in the same place under the same name and start it; pairing and folder are kept.
 
 Autostart: Windows uses a per-user logon task (`schtasks`, no admin rights), macOS a LaunchAgent in
 `~/Library/LaunchAgents`, Linux an entry in `~/.config/autostart`. The log is written next to
@@ -108,6 +108,16 @@ after another; failures retry after 1, 5 and 30 minutes (`Retry-After` is respec
 storage is full, uploads pause until you press "Retry". A heartbeat with version and sync state
 goes out every 60 seconds; if the server answers with the name this device is paired under, the
 status window shows it ("Paired as Office PC with app.example.com"). Progress is remembered in `state.json` next to the config file.
+
+## Updates
+
+The satellite checks the GitHub releases at start and every 6 hours. When a newer version exists,
+the status page shows "Version X is available". "Update now" downloads the file for your platform
+from the release, checks its SHA-256 against the checksum GitHub publishes for it, replaces the
+program and restarts it. If the download or the check fails, the old version keeps running and the
+page shows the error. "Update now" exists only in window mode on Windows and Linux. On macOS and
+with `run` (headless, e.g. as a service) the page links to the release page instead; install the
+new version by hand. The program is not signed yet, so the operating system may warn about the new file.
 
 ## Dependencies
 

@@ -51,6 +51,11 @@ type Options struct {
 	AppURL   func() string
 	// ShowWindow reopens the local window; a second start of the program asks for it.
 	ShowWindow func()
+	// Quit stops the whole program the way SIGTERM does , must return quickly and be idempotent (double clicks).
+	// Nil hides the quit button and route.
+	Quit func()
+	// Update is nil when the program cannot update itself.
+	Update *UpdateOptions
 	// Secret is the per-user secret from the session file. It only keys the
 	// HMAC handshake for /login-nonce and /show-window and is never sent, put in
 	// a URL or a cookie; browsers log in with a single-use nonce and get a
@@ -64,7 +69,7 @@ type Options struct {
 	Nonces *Nonces
 }
 
-//go:embed layout.html page.html setup.html settings.html denied.html
+//go:embed layout.html page.html setup.html settings.html denied.html quit.html stopped.html updating.html
 var templateFS embed.FS
 
 //go:embed fonts/*.woff2
@@ -79,6 +84,9 @@ var (
 	setupPage    = parse("setup.html")
 	settingsPage = parse("settings.html")
 	deniedPage   = parse("denied.html")
+	quitPage     = parse("quit.html")
+	stoppedPage  = parse("stopped.html")
+	updatingPage = parse("updating.html")
 )
 
 // ValidateAddr only allows loopback listeners: the page offers buttons and shows file names.
@@ -98,6 +106,9 @@ type server struct {
 	token string
 
 	challenges *Nonces
+
+	updateMu  sync.Mutex
+	updateErr string
 
 	sessMu   sync.Mutex
 	sessions []string // random IDs of logged-in browsers; memory only
@@ -164,6 +175,13 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.show)
 	mux.Handle("GET /fonts/", http.FileServerFS(fontFS))
 	mux.HandleFunc("POST /retry", s.post(s.retry))
+	if opt.Update != nil && opt.Update.Start != nil {
+		mux.HandleFunc("POST /update", s.post(s.update))
+	}
+	if opt.Quit != nil {
+		mux.HandleFunc("GET /quit", s.quitConfirm)
+		mux.HandleFunc("POST /quit", s.post(s.quit))
+	}
 	if opt.Wizard != nil {
 		mux.HandleFunc("POST /setup/pick", s.post(s.setupPick))
 		mux.HandleFunc("POST /setup/start", s.post(s.setupStart))
@@ -317,7 +335,7 @@ func (s *server) grant(w http.ResponseWriter, nonce string) bool {
 		http.Error(w, "no session", http.StatusInternalServerError)
 		return false
 	}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // NOSONAR no Secure flag: plain HTTP on loopback, and WKWebView/Safari drop Secure cookies over http
 		Name: s.cookieName(), Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	return true
@@ -356,6 +374,22 @@ func (s *server) retry(w http.ResponseWriter, r *http.Request) {
 		src.Retry()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *server) quitConfirm(w http.ResponseWriter, r *http.Request) {
+	render(w, quitPage, struct {
+		Token, Version string
+		Refresh        int
+	}{s.token, s.opt.Version, 0})
+}
+
+// quit answers first, then asks the program to stop.
+func (s *server) quit(w http.ResponseWriter, r *http.Request) {
+	render(w, stoppedPage, struct{ Refresh int }{0})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	s.opt.Quit()
 }
 
 func (s *server) source() Source {
@@ -398,7 +432,9 @@ type view struct {
 	Hint, PairCommand                      string
 	ShowRetry                              bool
 	ShowCounters                           bool
-	ShowRepair, ShowSettings               bool
+	ShowRepair, ShowSettings, ShowQuit     bool
+	UpdateVersion, UpdateLink, UpdateErr   string
+	UpdateCanStart                         bool
 	Subtitle, Nonce                        string
 	Refresh                                int
 }
@@ -427,8 +463,10 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		ShowProgress: snap.Total > 0, LastSync: "never", Checking: snap.Checking,
 		ShowCounters: snap.State != syncer.StateRevoked,
 		ShowRetry:    snap.State == syncer.StateQuota || snap.State == syncer.StateError || snap.Failed > 0,
-		ShowSettings: s.opt.Settings != nil, Refresh: 5, Nonce: nonceOf(r),
+		ShowSettings: s.opt.Settings != nil, ShowQuit: s.opt.Quit != nil, Refresh: 5, Nonce: nonceOf(r),
 	}
+	v.UpdateVersion, v.UpdateCanStart, v.UpdateLink = s.updateView()
+	v.UpdateErr = s.updateError()
 	switch snap.State {
 	case syncer.StateSyncing:
 		v.StateClass, v.StateLabel = "active", "Syncing"

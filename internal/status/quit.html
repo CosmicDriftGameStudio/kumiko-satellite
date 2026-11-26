@@ -1,0 +1,16 @@
+{{template "head" .Refresh}}
+<body>
+<main>
+  <h1>Quit satellite</h1>
+  <p class="sub"><a href="/">Back to status</a></p>
+  <section class="card">
+    <form method="post" action="/quit">
+      <input type="hidden" name="token" value="{{.Token}}">
+      <p>Sync stops until the satellite is started again (or at the next sign-in if autostart is on).</p>
+      <div class="actions"><button type="submit">Quit satellite</button></div>
+    </form>
+  </section>
+  <footer class="ver">Version {{.Version}}</footer>
+</main>
+</body>
+</html>

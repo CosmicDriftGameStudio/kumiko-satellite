@@ -86,7 +86,11 @@ func DisablePlan(goos, home string) (Plan, error) {
 
 func apply(p Plan) error {
 	if len(p.Cmd) > 0 {
-		cmd := exec.Command(p.Cmd[0], p.Cmd[1:]...)
+		name := p.Cmd[0]
+		if name == "schtasks" {
+			name = schtasksPath()
+		}
+		cmd := exec.Command(name, p.Cmd[1:]...)
 		hideWindow(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("%s: %w: %s", p.Cmd[0], err, strings.TrimSpace(string(out)))
@@ -116,7 +120,7 @@ func AutostartEnabled() bool {
 	}
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("schtasks", "/Query", "/TN", taskName)
+		cmd := exec.Command(schtasksPath(), "/Query", "/TN", taskName)
 		hideWindow(cmd)
 		return cmd.Run() == nil
 	case "darwin":

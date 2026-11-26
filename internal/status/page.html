@@ -6,6 +6,14 @@
 
   <section class="card">
     <div data-live="status">
+    {{if .UpdateVersion}}<div class="banner">
+      <span>Version {{.UpdateVersion}} is available.</span>
+      {{if .UpdateCanStart}}<form method="post" action="/update">
+        <input type="hidden" name="token" value="{{.Token}}">
+        <button type="submit">Update now</button>
+      </form>{{else if .UpdateLink}}<a href="{{.UpdateLink}}" target="_blank" rel="noopener">Open the release page</a>{{end}}
+    </div>{{end}}
+    {{if .UpdateErr}}<p class="banner bad">{{.UpdateErr}}</p>{{end}}
     <span class="pill {{.StateClass}}"><span aria-hidden="true">●</span> {{.StateLabel}}</span>
     {{if .ShowProgress}}
     <progress class="{{.StateClass}}" value="{{.Done}}" max="{{.Total}}"></progress>
@@ -42,6 +50,7 @@
         {{else}}<p class="sub">No events yet.</p>{{end}}</div>
       </details>
       {{if .ShowSettings}}<a href="/settings">Settings</a>{{end}}
+      {{if .ShowQuit}}<a href="/quit">Quit satellite</a>{{end}}
     </div>
   </section>
   <footer class="ver">Version {{.Version}}<noscript> &middot; <a href="/">Refresh</a></noscript></footer>
