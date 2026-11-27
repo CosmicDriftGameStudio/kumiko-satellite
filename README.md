@@ -1,5 +1,9 @@
 # kumiko-satellite
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=CosmicDriftGameStudio_kumiko-satellite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=CosmicDriftGameStudio_kumiko-satellite)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=CosmicDriftGameStudio_kumiko-satellite&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=CosmicDriftGameStudio_kumiko-satellite)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=CosmicDriftGameStudio_kumiko-satellite&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=CosmicDriftGameStudio_kumiko-satellite)
+
 Puts files from a folder on your computer into your Kumiko app. Save a scan or a document in the
 folder and it shows up in the app within a minute, where a process can pick it up. Pairing takes
 one code, no VPN and no inbound connections, and an admin can switch the device off from the app
